@@ -39,7 +39,8 @@ include(example_auto_set_url.cmake)
 #add_subdirectory(ampel)
 #add_subdirectory(ampel-functions)
 #add_subdirectory(spagetticode)
-add_subdirectory(ampel-freertos)
+add_subdirectory(ampel-freertos-slave)
+add_subdirectory(ampel-freertos-master)
 
 add_subdirectory(freertos)
 
