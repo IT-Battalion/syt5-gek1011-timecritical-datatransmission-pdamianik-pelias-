@@ -2,6 +2,7 @@
 #include "hardware/spi.h"
 #include "FreeRTOS.h"
 #include "task.h"
+#include "hardware/watchdog.h"
 
 #define SCK 18 //sck
 #define CSn 17 //cs
@@ -143,9 +144,16 @@ void transmit_state(void* p) {
         // Deselect the slave by setting its CS pin high
         gpio_put(CSn, 1);
 
-        vTaskDelay(1000);
+        vTaskDelay(10);
         gpio_put(PICO_DEFAULT_LED_PIN, 0);
-        vTaskDelay(1000);
+        vTaskDelay(10);
+
+        //wenn fehler zurückkommt restarte.
+        //if (rx_buffer)
+        //{
+        //    watchdog_update();
+        //}
+        
     }
 }
 
@@ -172,6 +180,10 @@ int main() {
     xTaskCreate(transmit_state, "dataTransmitter", 1024, NULL, 1, &tsDataTransmitter);
     xTaskCreate(handle_state, "stateHandler", 1024, NULL, 1, &tsStateHandler);
     vTaskStartScheduler();
+
+    // Enable the watchdog, requiring the watchdog to be updated every 100ms or the chip will reboot
+    // second arg is pause on debug which means the watchdog will pause when stepping through code
+    //watchdog_enable(60, 1);
 
     while (true)
     {
