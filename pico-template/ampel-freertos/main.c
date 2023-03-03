@@ -8,7 +8,9 @@
 #define CSn 17 //cs
 #define Rx 21 //miso
 #define Tx 19 //mosi
+
 #define BUFFER_SIZE 0x100
+#define ERROR_CODE 0xFF
 
 // Define the GPIO pins for the traffic lights
 #define LIGHT_RED    0
@@ -58,15 +60,8 @@ StateStatusPair stateStatusMap[] = {
     { STATE_GREEN_BLINKING, STATUS_GREEN_BLINKING }
 };
 
-uint8_t getStatusForState(State state) {
-    for (int i = 0; i < NUM_STATES; i++) {
-        if (stateStatusMap[i].state == state) {
-            return stateStatusMap[i].status;
-        }
-    }
-    // If no matching state was found, return an error value (-1)
-    return -1;
-}
+TaskHandle_t tsDataTransmitter = NULL;
+TaskHandle_t tsStateHandler = NULL;
 
 // Define the function pointer type for the state functions
 typedef void (*State_Function)(void);
@@ -97,6 +92,16 @@ static const int pins[] = {
 };
 
 uint8_t rx_buffer[BUFFER_SIZE] = {0};
+
+uint8_t getStatusForState(State state) {
+    for (int i = 0; i < NUM_STATES; i++) {
+        if (stateStatusMap[i].state == state) {
+            return stateStatusMap[i].status;
+        }
+    }
+    // If no matching state was found, return an error value (-1)
+    return -1;
+}
 
 // Initialize the traffic light pins and direction
 static void init_pins(void) {
@@ -138,6 +143,9 @@ void transmit_state(void* p) {
         if (spi_is_writable(spi0) && spi_is_readable(spi0))
         {
             spi_write_read_blocking(spi0, &send_buf, rx_buffer, BUFFER_SIZE);
+        } else {
+            vTaskDelete(tsStateHandler);
+            break;
         }
         
 
@@ -149,12 +157,24 @@ void transmit_state(void* p) {
         vTaskDelay(10);
 
         //wenn fehler zurückkommt restarte.
-        //if (rx_buffer)
+        //if (rx_buffer[0] != ERROR_CODE)
         //{
         //    watchdog_update();
         //}
         
     }
+
+    //error mode
+    while (1)
+    {
+        gpio_put(PICO_DEFAULT_LED_PIN, 1);
+
+        gpio_put(pins[LIGHT_YELLOW], 1);
+        sleep_ms(DURATION_YELLOW_BLINKING);
+        gpio_put(pins[LIGHT_YELLOW], 0);
+        sleep_ms(DURATION_YELLOW_BLINKING);
+    }
+    
 }
 
 void handle_state(void* p) {
@@ -168,9 +188,6 @@ void handle_state(void* p) {
         state_functions[state]();
     }
 }
-
-TaskHandle_t tsDataTransmitter = NULL;
-TaskHandle_t tsStateHandler = NULL;
 
 int main() {
     // Initialize the GPIO pins
@@ -188,13 +205,11 @@ int main() {
     while (true)
     {
         gpio_put(PICO_DEFAULT_LED_PIN, 1);
-        sleep_ms(500);
-        gpio_put(PICO_DEFAULT_LED_PIN, 0);
-        sleep_ms(100);
-        gpio_put(PICO_DEFAULT_LED_PIN, 1);
-        sleep_ms(100);
-        gpio_put(PICO_DEFAULT_LED_PIN, 0);
-        sleep_ms(200);
+
+        gpio_put(pins[LIGHT_YELLOW], 1);
+        sleep_ms(DURATION_YELLOW_BLINKING);
+        gpio_put(pins[LIGHT_YELLOW], 0);
+        sleep_ms(DURATION_YELLOW_BLINKING);
     }
     
 }
