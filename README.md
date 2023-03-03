@@ -71,11 +71,11 @@ Anschließend benötigt man lediglich drei GPIO Ports (in meinem Fall GP0, GP1 u
 
 Anschließend benötigt man nur noch einen Widerstand, damit die LED's nicht kaputt gehen, auch diesen schließt man an einen beliebigen GND Port an. 
 
-![](images/slave.png)
+![img](images/slave.png)
 
-![](images/master.png)
+![img](images/master.png)
 
-![](images/slave-master.png)
+![img](images/slave-master.png)
 
 **Software**
 
