@@ -4,58 +4,51 @@
 #include "task.h"
 #include "hardware/watchdog.h"
 
-#define BUFFER_SIZE 0x100
 #define ERROR_CODE 0xFF
-
 #define PICO_DEFAULT_LED_PIN 25
 
-#define SCK 2 //sck
-#define CSn 5 //cs
-#define Rx 4 //miso
-#define Tx 3 //mosi
+#define PIN_SCK 2 //sck
+#define PIN_CS 5 //cs
+#define PIN_RX 4 //miso
+#define PIN_TX 3 //mosi
 
 TaskHandle_t tsDataHandler = NULL;
 TaskHandle_t tsBlinker = NULL;
+TickType_t timestamp = 0;
 
-// Initialize the traffic light pins and direction
 static void init_pins(void) {
     gpio_init(PICO_DEFAULT_LED_PIN);
     gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
 }
 
 static void init_spi(void) {
-    // Initialize SPI interface
-    spi_init(spi0, 1000 * 1000);  // Set clock frequency to 100 MHz
+    spi_init(spi0, 1000 * 1000);
     spi_set_slave(spi0, false);
-    gpio_set_function(Rx, GPIO_FUNC_SPI);
-    gpio_set_function(CSn, GPIO_FUNC_SPI);
-    gpio_set_function(SCK, GPIO_FUNC_SPI);
-    gpio_set_function(Tx, GPIO_FUNC_SPI);
+    gpio_set_function(PIN_RX, GPIO_FUNC_SPI);
+    gpio_set_function(PIN_CS, GPIO_FUNC_SPI);
+    gpio_set_function(PIN_SCK, GPIO_FUNC_SPI);
+    gpio_set_function(PIN_TX, GPIO_FUNC_SPI);
 } 
 
-void blink(void* p) {
-    for ( ;; ) {
-        vTaskDelay(1500);
+void tBlinker(void* p) {
+    while (true) {
+        vTaskDelay(30);
         gpio_put(PICO_DEFAULT_LED_PIN, 1);
-        vTaskDelay(1500);
+        vTaskDelay(30);
         gpio_put(PICO_DEFAULT_LED_PIN, 0);
     }
 }
-TickType_t timestamp = 0;
-void dataHandler(void* p) {
+
+void tDataHandler(void* p) {
     uint8_t buffer[10];
-    for ( ;; ) {
-        // Pull CS low to select the device
-        gpio_put(CSn, 0);
-        
-        // Read data from the device
+    while (true) {
+        gpio_put(PIN_CS, 0);
         if (spi_is_readable(spi0))
         {
             timestamp = xTaskGetTickCount();
             spi_read_blocking(spi0, 0, buffer, sizeof(buffer));
         }
         
-        // Process the received data here
         if ((xTaskGetTickCount() - timestamp) > 60)
         {
             if (spi_is_writable(spi0))
@@ -64,9 +57,7 @@ void dataHandler(void* p) {
                 spi_write_blocking(spi0, send, sizeof(send));
             }
         }
-
-        // Pull CS high to deselect the device
-        gpio_put(CSn, 1);
+        gpio_put(PIN_CS, 1);
         vTaskDelay(30);
     }
 }
@@ -75,8 +66,8 @@ int main() {
     init_pins();
     init_spi();
 
-    xTaskCreate(dataHandler, "dataHandler", 1024, NULL, 1, &tsDataHandler);
-    xTaskCreate(blink, "blinkHandler", 1024, NULL, 1, &tsBlinker);
+    xTaskCreate(tDataHandler, "dataHandler", 1024, NULL, 1, &tsDataHandler);
+    xTaskCreate(tBlinker, "blinkHandler", 1024, NULL, 1, &tsBlinker);
     vTaskStartScheduler();
 
     while (true)
