@@ -71,11 +71,11 @@ Anschließend benötigt man lediglich drei GPIO Ports (in meinem Fall GP0, GP1 u
 
 Anschließend benötigt man nur noch einen Widerstand, damit die LED's nicht kaputt gehen, auch diesen schließt man an einen beliebigen GND Port an. 
 
-![](/Users/pelias/Documents/10.SEM/SYT/BORM/syt5-gek1011-timecritical-datatransmission-pdamianik-pelias-1/images/slave.png)
+![](images/slave.png)
 
-![](/Users/pelias/Documents/10.SEM/SYT/BORM/syt5-gek1011-timecritical-datatransmission-pdamianik-pelias-1/images/master.png)
+![](images/master.png)
 
-![](/Users/pelias/Documents/10.SEM/SYT/BORM/syt5-gek1011-timecritical-datatransmission-pdamianik-pelias-1/images/slave-master.png)
+![](images/slave-master.png)
 
 **Software**
 
