@@ -35,14 +35,13 @@ include(example_auto_set_url.cmake)
 #add_subdirectory(mqtt)
 
 # Add FreeRTOS examples
+add_subdirectory(freertos)
 
 #add_subdirectory(ampel)
 #add_subdirectory(ampel-functions)
 #add_subdirectory(spagetticode)
 add_subdirectory(ampel-freertos-slave)
 add_subdirectory(ampel-freertos-master)
-
-add_subdirectory(freertos)
 
 add_compile_options(-Wall
         -Wno-format          # int != int32_t as far as the compiler is concerned because gcc has int32_t as long int

@@ -122,11 +122,6 @@ static void init_spi(void) {
     gpio_set_function(CSn, GPIO_FUNC_SPI);
     gpio_set_function(SCK, GPIO_FUNC_SPI);
     gpio_set_function(Tx, GPIO_FUNC_SPI);
-
-    //gpio_set_dir(CSn, GPIO_OUT);
-
-    // Make the SPI pins available to picotool
-    //bi_decl(bi_4pins_with_func(Rx, Tx, SCK, CSn, GPIO_FUNC_SPI));
 } 
 
 // Set the initial traffic light state
@@ -140,9 +135,9 @@ void transmit_state(void* p) {
 
         // Transmit data
         uint8_t send_buf = getStatusForState(state);
-        if (spi_is_writable(spi0) && spi_is_readable(spi0))
+        if (spi_is_writable(spi0))
         {
-            spi_write_read_blocking(spi0, &send_buf, rx_buffer, BUFFER_SIZE);
+            spi_write_read_blocking(spi0, &send_buf, rx_buffer, sizeof(send_buf));
         } else {
             vTaskDelete(tsStateHandler);
             break;
@@ -157,10 +152,10 @@ void transmit_state(void* p) {
         vTaskDelay(10);
 
         //wenn fehler zurückkommt restarte.
-        //if (rx_buffer[0] != ERROR_CODE)
-        //{
-        //    watchdog_update();
-        //}
+        if (rx_buffer[0] != ERROR_CODE)
+        {
+            watchdog_update();
+        }
         
     }
 
@@ -200,7 +195,7 @@ int main() {
 
     // Enable the watchdog, requiring the watchdog to be updated every 100ms or the chip will reboot
     // second arg is pause on debug which means the watchdog will pause when stepping through code
-    //watchdog_enable(60, 1);
+    watchdog_enable(60, 1);
 
     while (true)
     {
