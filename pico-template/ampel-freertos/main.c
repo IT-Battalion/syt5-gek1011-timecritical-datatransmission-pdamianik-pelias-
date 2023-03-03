@@ -1,16 +1,19 @@
 #include "pico/stdlib.h"
 #include "hardware/spi.h"
+#include "FreeRTOS.h"
+#include "task.h"
 
 #define SCK 18 //sck
 #define CSn 17 //cs
 #define Rx 21 //miso
 #define Tx 19 //mosi
-#define BUFFER_SIZE 10
+#define BUFFER_SIZE 0x100
 
 // Define the GPIO pins for the traffic lights
 #define LIGHT_RED    0
 #define LIGHT_YELLOW 1
 #define LIGHT_GREEN  2
+#define PICO_DEFAULT_LED_PIN 25
 
 // Define the durations for each traffic light state
 #define DURATION_YELLOW_BLINKING 500
@@ -19,6 +22,13 @@
 #define DURATION_RED_YELLOW      4000
 #define DURATION_GREEN           5000
 #define DURATION_GREEN_BLINKING  500
+
+#define STATUS_RED            0xE
+#define STATUS_RED_YELLOW     0xD
+#define STATUS_GREEN          0x2
+#define STATUS_GREEN_BLINKING 0x5
+#define STATUS_YELLOW         0x8
+#define STATUS_YELLOW_BLINKING 0x1
 
 // Define the number of traffic light states
 #define NUM_STATES 6
@@ -32,6 +42,30 @@ typedef enum {
     STATE_GREEN,
     STATE_GREEN_BLINKING,
 } State;
+
+typedef struct {
+    State state;
+    uint8_t status;
+} StateStatusPair;
+
+StateStatusPair stateStatusMap[] = {
+    { STATE_YELLOW_BLINKING, STATUS_YELLOW_BLINKING },
+    { STATE_YELLOW, STATUS_YELLOW },
+    { STATE_RED, STATUS_RED },
+    { STATE_RED_YELLOW, STATUS_RED_YELLOW },
+    { STATE_GREEN, STATUS_GREEN },
+    { STATE_GREEN_BLINKING, STATUS_GREEN_BLINKING }
+};
+
+uint8_t getStatusForState(State state) {
+    for (int i = 0; i < NUM_STATES; i++) {
+        if (stateStatusMap[i].state == state) {
+            return stateStatusMap[i].status;
+        }
+    }
+    // If no matching state was found, return an error value (-1)
+    return -1;
+}
 
 // Define the function pointer type for the state functions
 typedef void (*State_Function)(void);
@@ -61,12 +95,13 @@ static const int pins[] = {
     LIGHT_GREEN,
 };
 
-uint8_t tx_buffer[BUFFER_SIZE] = {0};
 uint8_t rx_buffer[BUFFER_SIZE] = {0};
 
 // Initialize the traffic light pins and direction
 static void init_pins(void) {
     gpio_init(PICO_DEFAULT_LED_PIN);
+    gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
+    
     for (int i = 0; i < sizeof(pins) / sizeof(pins[0]); i++) {
         gpio_init(pins[i]);
         gpio_set_dir(pins[i], GPIO_OUT);
@@ -75,42 +110,47 @@ static void init_pins(void) {
 
 static void init_spi(void) {
     // Initialize SPI interface
-    spi_init(spi_default, 100 * 1000 * 1000);  // Set clock frequency to 100 MHz
-    spi_set_slave(spi_default, true);
+    spi_init(spi0, 1000 * 1000);  // Set clock frequency to 100 MHz
+    spi_set_slave(spi0, true);
     gpio_set_function(Rx, GPIO_FUNC_SPI);
     gpio_set_function(CSn, GPIO_FUNC_SPI);
     gpio_set_function(SCK, GPIO_FUNC_SPI);
     gpio_set_function(Tx, GPIO_FUNC_SPI);
 
-    gpio_set_dir(CSn, GPIO_OUT);
+    //gpio_set_dir(CSn, GPIO_OUT);
 
     // Make the SPI pins available to picotool
     //bi_decl(bi_4pins_with_func(Rx, Tx, SCK, CSn, GPIO_FUNC_SPI));
 } 
 
-static void transmit_state(State state) {
-    // Select the slave by setting its CS pin low
-    gpio_put(CSn, 0);
-
-    gpio_put(PICO_DEFAULT_LED_PIN, 1);
-    // Transmit data
-    spi_write_read_blocking(spi0, tx_buffer, rx_buffer, BUFFER_SIZE);
-    gpio_put(PICO_DEFAULT_LED_PIN, 0);
-
-    // Deselect the slave by setting its CS pin high
-    gpio_put(CSn, 1);
-}
-
 // Set the initial traffic light state
 State state = STATE_YELLOW_BLINKING;
 
-int main() {
-    // Initialize the GPIO pins
-    init_pins();
-    init_spi();
+void transmit_state(void* p) {
+    for( ;; ) {
+        // Select the slave by setting its CS pin low
+        gpio_put(CSn, 0);
+        gpio_put(PICO_DEFAULT_LED_PIN, 1);
 
-    // Run the traffic light state machine loop
-    for (;;) {
+        // Transmit data
+        uint8_t send_buf = getStatusForState(state);
+        if (spi_is_writable(spi0) && spi_is_readable(spi0))
+        {
+            spi_write_read_blocking(spi0, &send_buf, rx_buffer, BUFFER_SIZE);
+        }
+        
+
+        // Deselect the slave by setting its CS pin high
+        gpio_put(CSn, 1);
+
+        vTaskDelay(1000);
+        gpio_put(PICO_DEFAULT_LED_PIN, 0);
+        vTaskDelay(1000);
+    }
+}
+
+void handle_state(void* p) {
+    for ( ;; ) {
         // Turn off all traffic lights
         for (int i = 0; i < sizeof(pins) / sizeof(pins[0]); i++) {
             gpio_put(pins[i], 0);
@@ -118,16 +158,41 @@ int main() {
 
         // Call the current state function
         state_functions[state]();
-        transmit_state(state);
     }
+}
+
+TaskHandle_t tsDataTransmitter = NULL;
+TaskHandle_t tsStateHandler = NULL;
+
+int main() {
+    // Initialize the GPIO pins
+    init_pins();
+    init_spi();
+
+    xTaskCreate(transmit_state, "dataTransmitter", 1024, NULL, 1, &tsDataTransmitter);
+    xTaskCreate(handle_state, "stateHandler", 1024, NULL, 1, &tsStateHandler);
+    vTaskStartScheduler();
+
+    while (true)
+    {
+        gpio_put(PICO_DEFAULT_LED_PIN, 1);
+        sleep_ms(500);
+        gpio_put(PICO_DEFAULT_LED_PIN, 0);
+        sleep_ms(100);
+        gpio_put(PICO_DEFAULT_LED_PIN, 1);
+        sleep_ms(100);
+        gpio_put(PICO_DEFAULT_LED_PIN, 0);
+        sleep_ms(200);
+    }
+    
 }
 
 static void state_yellow_blinking(void) {
     for (int i = 0; i < 10; i++) {
         gpio_put(pins[LIGHT_YELLOW], 1);
-        sleep_ms(DURATION_YELLOW_BLINKING);
+        vTaskDelay(DURATION_YELLOW_BLINKING);
         gpio_put(pins[LIGHT_YELLOW], 0);
-        sleep_ms(DURATION_YELLOW_BLINKING);
+        vTaskDelay(DURATION_YELLOW_BLINKING);
     }
 
     state = STATE_RED;
@@ -136,14 +201,14 @@ static void state_yellow_blinking(void) {
 static void state_yellow(void) {
     gpio_put(pins[LIGHT_YELLOW], 1);
 
-    sleep_ms(DURATION_YELLOW);
+    vTaskDelay(DURATION_YELLOW);
     state = STATE_RED;
 }
 
 static void state_red(void) {
     gpio_put(pins[LIGHT_RED], 1);
 
-    sleep_ms(DURATION_RED);
+    vTaskDelay(DURATION_RED);
     state = STATE_RED_YELLOW;
 }
 
@@ -151,25 +216,25 @@ static void state_red_yellow(void) {
     gpio_put(pins[LIGHT_RED], 1);
     gpio_put(pins[LIGHT_YELLOW], 1);
 
-    sleep_ms(4000);
+    vTaskDelay(DURATION_RED_YELLOW);
     state = STATE_GREEN;
 }
 
-void state_green(void)
+static void state_green(void)
 {
     gpio_put(pins[LIGHT_GREEN], 1);
 
-    sleep_ms(5000);
+    vTaskDelay(DURATION_GREEN);
     state = STATE_GREEN_BLINKING;
 }
 
-void state_green_blinking(void)
+static void state_green_blinking(void)
 {
     for (int i = 0; i < 4; i++) {
         gpio_put(pins[LIGHT_GREEN], 0);
-        sleep_ms(500);
+        vTaskDelay(DURATION_GREEN_BLINKING);
         gpio_put(pins[LIGHT_GREEN], 1);
-        sleep_ms(500);
+        vTaskDelay(DURATION_GREEN_BLINKING);
     }
 
     state = STATE_YELLOW;
