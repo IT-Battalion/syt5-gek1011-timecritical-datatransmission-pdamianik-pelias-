@@ -36,8 +36,6 @@ Für die Übung wurden folgende Komponenten benötigt:
 
 - 1x Steckbrett
 
-
-
 **Verkabelung:**
 
 Für einen SPI Bus benötigt man vier Verbindungen. [3]
@@ -50,8 +48,6 @@ Für einen SPI Bus benötigt man vier Verbindungen. [3]
 
 4. SCK (SCKL)
 
-
-
 Der erste Schritt ist daher am PinOut [1] die notwendigen Anschlüsse/Pins zu identifizieren und die beiden PICO's miteinander zu verkabeln. In meinem Fall habe ich folgende Pins gewählt:
 
 | PICO 1 (Slave)  | PICO 2 (Master) |
@@ -62,8 +58,6 @@ Der erste Schritt ist daher am PinOut [1] die notwendigen Anschlüsse/Pins zu id
 | GP17 (SPI0 CSn) | GP5 (SPI0 CSn)  |
 
 Wichtig zu beachten ist hier, dass man immer den selben SPI (in meinem Fall SPI0) wählt. 
-
-
 
 Da wir eine Ampelschaltung bauen möchten, müssen wir natürlich auch noch die LED's richtig am Slave installieren. Da LED's einen Minus und einen Plus Pol (Anode und Kathode) haben, gilt es zunächst einmal herauszufinden was Anode und was Kathode ist. [2]
 
@@ -83,13 +77,11 @@ Um die PICO's programmieren zu können benötigen wir eine angemessene Entwicklu
 
 Funktioniert alles wie beschrieben ist man mit dem Setup fertig und kann an die Entwicklung gehen.
 
-
-
 **Logic Analyzer**
 
-tba
+Beim Logic Analyzer ist es eigentlich nur wichtig, die Pin Belegung richtig zu konfigurieren und anschließend den Analyzer auch an die korrekten Pins anzustecken.
 
-
+![img](images/slave-master-logic-analyzer.png)
 
 ### Entwicklung
 
@@ -116,7 +108,6 @@ Wir wollen unsere Ampelschaltung möglichst schön implementieren, daher benutze
 Daher definieren wir unsere States und die Anzahl:
 
 ```c
-
 #define NUM_STATES 6
 
 typedef enum {
@@ -127,7 +118,6 @@ typedef enum {
     STATE_GREEN,
     STATE_GREEN_BLINKING,
 } State;
-
 ```
 
 Außerdem braucht es einen default Zustand:
@@ -173,7 +163,7 @@ Das wichtigste zuerst: Die Pins initialisieren, sodass wir sie verwenden können
 static void init_pins(void) {
     gpio_init(PICO_DEFAULT_LED_PIN);
     gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
-    
+
     for (int i = 0; i < sizeof(pins) / sizeof(pins[0]); i++) {
         gpio_init(pins[i]);
         gpio_set_dir(pins[i], GPIO_OUT);
@@ -363,7 +353,6 @@ void handle_state(void* p) {
 Das Daten versenden ist dann wesentlich komplexer, hier müssen wir nämlich nicht nur die Daten über den SPI Bus verschicken, sondern auch darauf achten, was zurückkommt, den watchdog aktualisieren und im Fehlerfall in den Fehlermode gehen und die Ampel herunterfahren.
 
 ```c
-
 #define ERROR_CODE 0xFF
 void transmit_state(void* p) {
     uint8_t rx_buffer[10];
@@ -379,7 +368,7 @@ void transmit_state(void* p) {
             vTaskDelete(tsStateHandler);
             break;
         }
-        
+
         gpio_put(PIN_CS, 1);
 
         vTaskDelay(10);
@@ -401,7 +390,7 @@ void transmit_state(void* p) {
         gpio_put(pins[LIGHT_YELLOW], 0);
         sleep_ms(DURATION_YELLOW_BLINKING);
     }
-    
+
 }
 ```
 
@@ -415,7 +404,7 @@ int main() {
     xTaskCreate(transmit_state, "dataTransmitter", 1024, NULL, 1, &tsDataTransmitter);
     xTaskCreate(handle_state, "stateHandler", 1024, NULL, 1, &tsStateHandler);
     vTaskStartScheduler();
-    
+
     watchdog_enable(60, 1);
 
     while (true)
@@ -427,11 +416,9 @@ int main() {
         gpio_put(pins[LIGHT_YELLOW], 0);
         sleep_ms(DURATION_YELLOW_BLINKING);
     }
-    
+
 }
 ```
-
-
 
 #### Master
 
@@ -516,7 +503,7 @@ void tDataHandler(void* p) {
             timestamp = xTaskGetTickCount();
             spi_read_blocking(spi0, 0, buffer, sizeof(buffer));
         }
-        
+
         if ((xTaskGetTickCount() - timestamp) > 60)
         {
             if (spi_is_writable(spi0))
@@ -550,8 +537,6 @@ int main() {
     }
 }
 ```
-
-
 
 ## Quellen
 
