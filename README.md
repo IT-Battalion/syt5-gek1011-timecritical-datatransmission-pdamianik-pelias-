@@ -3,12 +3,202 @@
 ## Fragestellungen
 
 - Was ist ein SPI-Bus und wie ist dieser aufgebaut?
+  
+  > Serial Peripheral Interface (SPI) ist ein auf dem Master-Slave basierendes synchrones Bussystem. SPI ist vollduplex fähig, also es kann gleichzeitig gesendet und empfangen werden. 
+  > 
+  > Theoretisch kann man an einen SPI Bus unendlich viele Teilnehmer hängen (max. 1 Master, viele Slaves). Für jeden zusätzlichen Teilnehmer wird lediglich ein zusätzlich ChipSelect benötigt.
+  > 
+  > Ganz generell benötigt man für SPI vier Anschlüsse:
+  > - MOSI (**M**aster **O**ut -> **S**lave **I**n)
+  > 
+  > - MISO (**M**aster **I**n <- **S**lave **O**ut)
+  > 
+  > - SCK (Serial Clock)
+  > 
+  > - CS (Chip Select)
+  > 
+  > 
+  > Mithilfe des Chip Select gibt der Master an, welcher Slave sprechen darf. Es kann immer nur ein Slave gleichzeitig sprechen. (Der Master setzt den CS entweder HIGH oder LOW)
+  > 
+  > 
+  > Der SPI Bus ermöglicht umfangreiche Einstellungen, unter anderem kann man die Taktfrequenz und die Bit länge der Übertragung selbstständig konfigurieren.
+  > 
+  > [6][3]
 - Welche Vorteile ergeben sich bei der Verwendung eines Kommunikationsbusses?
+  
+  > Die Bus-Topologie ist eine Art Netzwerktopologie, die mehrere Vorteile bietet. Einer der Vorteile ist, dass es sehr einfach ist, ein neues Gerät mit dem Netzwerk zu verbinden, solange das Gerät über den passenden Anschlussmechanismus verfügt. Das neue Gerät wird einfach mit der linearen Bus-Topologie verbunden und ist sofort Teil des Netzwerks. 
+  > 
+  > Ein weiterer Vorteil der Bus-Topologie ist, dass sie im Vergleich zu anderen Netzwerkoptionen wie Ring-, Stern- oder Hybridnetzwerken am günstigsten umzusetzen ist. Denn sie erfordert weniger Kabel als die anderen Netzwerkoptionen. 
+  > 
+  > Ein weiterer wichtiger Vorteil der Bus-Topologie ist, dass der Ausfall einer Station keinen Einfluss auf den Rest des Netzwerks hat. 
+  > 
+  > Ein weiterer Vorteil der Bus-Topologie ist, dass keine Hubs oder Switches benötigt werden. Im Vergleich zu anderen Setups lässt dies weniger potenzielle Fehlerquellen zu.
+  > 
+  > Schließlich ist ein weiterer Vorteil der Bus-Topologie, dass sie einfach erweitert werden kann. Obwohl die Größe und Reichweite der Bus-Topologie naturgemäß begrenzt ist, kann sie sehr einfach erweitert werden. Obwohl dies die Anzahl der möglichen Paketkollisionen erhöhen kann, ist es eine vereinfachte Lösung. [7]
+
 - Welche Möglichkeiten der Beschaltung sind beim SPI-Bus möglich und wie wirkt sich die Clock darauf aus?
+  
+  > Beim Anschluss von Geräten an den SPI-Bus gibt es verschiedene Möglichkeiten der Beschaltung. Der Bus kann entweder im Voll-Duplex- oder im Half-Duplex-Modus betrieben werden. Im Voll-Duplex-Modus können Daten in beide Richtungen gleichzeitig übertragen werden, während im Half-Duplex-Modus Daten nur in eine Richtung übertragen werden können.
+  > 
+  > Ein weiterer wichtiger Aspekt beim SPI-Bus ist die Clock, also das Taktsignal, das die Datenübertragung steuert. Die Frequenz der Clock kann je nach Gerät und Anwendung unterschiedlich sein. Eine höhere Clock-Frequenz ermöglicht eine schnellere Datenübertragung, aber kann auch zu Problemen mit der Signalintegrität führen, wenn das Kabel oder die Leiterplatte zu lang oder zu komplex ist.
+  > 
+  > [6][3]
 - Wie werden zeitkritische Anwendungen (real-time) eingeteilt?
+  
+  > Zeitkritische Anwendungen werden in Echtzeit-Systemen (Real-Time Systems) eingeteilt, die die Fähigkeit besitzen, bestimmte zeitliche Anforderungen zu erfüllen. Echtzeitsysteme lassen sich in der Regel in zwei Kategorien einteilen: 
+  > - harte Echtzeitsysteme
+  > 
+  > - weiche Echtzeitsysteme.
+  > 
+  > Harte Echtzeitsysteme sind Systeme, bei denen das Nichterfüllen der zeitlichen Anforderungen katastrophale Folgen hat. In solchen Systemen müssen die Ergebnisse innerhalb eines genau definierten Zeitrahmens vorliegen. 
+  > 
+  > Weiche Echtzeitsysteme hingegen haben weniger kritische Anforderungen an die Zeitgenauigkeit und können in der Regel Verzögerungen tolerieren. [12]
 - Wie kommt ein Watchdog bei zeitkritischen Anwendungen zum Einsatz?
+  
+  > Dies ist ein Countdown-Timer, der Teile des Chips neu starten kann, wenn
+  >  er Null erreicht. Zum Beispiel kann dies verwendet werden, um den 
+  > Prozessor neu zu starten, wenn die darauf ausgeführte Software in einer 
+  > Endlosschleife oder ähnlichem stecken bleibt. Der Programmierer muss 
+  > periodisch einen Wert an den Watchdog schreiben, um zu verhindern, dass 
+  > er Null erreicht. [8]
+  > 
+  > 
+  > 
+  > ```c
+  > #include <stdio.h>
+  > #include "pico/stdlib.h"
+  > #include "hardware/watchdog.h"
+  >  
+  > 
+  > int main() {
+  >     stdio_init_all();
+  >  
+  >     if (watchdog_caused_reboot()) {
+  >         printf("Rebooted by Watchdog!\n");
+  >         return 0;
+  >     } else {
+  >         printf("Clean boot\n");
+  >     }
+  >  
+  >     // Enable the watchdog, requiring the watchdog to be updated every 100ms or the chip will reboot
+  >     // second arg is pause on debug which means the watchdog will pause when stepping through code
+  >     watchdog_enable(100, 1);
+  >  
+  >     for (uint i = 0; i < 5; i++) {
+  >         printf("Updating watchdog %d\n", i);
+  >         watchdog_update();
+  >     }
+  >  
+  >     // Wait in an infinite loop and don't update the watchdog so it reboots us
+  >     printf("Waiting to be rebooted by watchdog\n");
+  >     while(1);
+  > }
+  > ```
 - Wie kann man Interrupts priorisieren?
+  
+  > Jede Task wird eine Priorität von 0 bis (configMAX_PRIORITIES - 1) 
+  > zugewiesen, wobei configMAX_PRIORITIES in FreeRTOSConfig.h definiert 
+  > ist.
+  > 
+  > Wenn der verwendete Port einen portoptimierten Task-Auswahlmechanismus 
+  > implementiert, der eine "Count Leading Zeros"-Typ-Anweisung (für die 
+  > Task-Auswahl in einer einzigen Anweisung) verwendet und 
+  > configUSE_PORT_OPTIMISED_TASK_SELECTION in FreeRTOSConfig.h auf 1 
+  > gesetzt ist, kann configMAX_PRIORITIES nicht höher als 32 sein. In allen
+  >  anderen Fällen kann configMAX_PRIORITIES jeden vernünftigen Wert 
+  > annehmen - sollte aber aus Gründen der RAM-Nutzungseffizienz auf den 
+  > minimalen tatsächlich notwendigen Wert reduziert werden. [9]
+  > 
+  > `vTaskPrioritySet` [10]
+  > 
+  > ```c
+  > #include <stdio.h>
+  > #include "pico/stdlib.h"
+  > #include "pico/multicore.h"
+  > #include "pico/time.h"
+  > #include "hardware/spi.h"
+  > #include "FreeRTOS.h"
+  > #include "task.h"
+  > 
+  > #define PIN_SCK  18
+  > #define PIN_MOSI 19
+  > #define PIN_MISO 16
+  > #define PIN_CS   17
+  > 
+  > #define SPI_PORT spi0
+  > #define SPI_BAUDRATE 1000000
+  > 
+  > #define TASK1_PRIORITY 3
+  > #define TASK2_PRIORITY 2
+  > 
+  > SemaphoreHandle_t spi_mutex;
+  > 
+  > void spi_task(void *params) {
+  >     while (true) {
+  >         if (xSemaphoreTake(spi_mutex, portMAX_DELAY) == pdTRUE) {
+  >             uint8_t tx_buf[1] = {0x01};
+  >             uint8_t rx_buf[1] = {0};
+  >             spi_write_read_blocking(SPI_PORT, tx_buf, rx_buf, sizeof(tx_buf));
+  >             printf("Received SPI data: %d\n", rx_buf[0]);
+  >             xSemaphoreGive(spi_mutex);
+  >         }
+  >         vTaskDelay(pdMS_TO_TICKS(500));
+  >     }
+  > }
+  > 
+  > void high_priority_task(void *params) {
+  >     while (true) {
+  >         printf("High priority task running.\n");
+  >         vTaskDelay(pdMS_TO_TICKS(500));
+  >     }
+  > }
+  > 
+  > void low_priority_task(void *params) {
+  >     while (true) {
+  >         printf("Low priority task running.\n");
+  >         vTaskDelay(pdMS_TO_TICKS(500));
+  >     }
+  > }
+  > 
+  > void spi_isr() {
+  >     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+  >     vTaskPrioritySet(NULL, TASK1_PRIORITY);
+  >     xSemaphoreGiveFromISR(spi_mutex, &xHigherPriorityTaskWoken);
+  >     if (xHigherPriorityTaskWoken == pdTRUE) {
+  >         portYIELD_FROM_ISR();
+  >     }
+  > }
+  > 
+  > int main() {
+  >     stdio_init_all();
+  >     spi_init(SPI_PORT, SPI_BAUDRATE);
+  >     gpio_set_function(PIN_SCK, GPIO_FUNC_SPI);
+  >     gpio_set_function(PIN_MOSI, GPIO_FUNC_SPI);
+  >     gpio_set_function(PIN_MISO, GPIO_FUNC_SPI);
+  >     gpio_set_function(PIN_CS, GPIO_FUNC_SPI_CS);
+  >     spi_set_format(SPI_PORT, 8, SPI_CPOL_0, SPI_CPHA_0, SPI_MSB_FIRST);
+  >     spi_set_slave_mode(SPI_PORT, false);
+  >     spi_set_cs_polarity(SPI_PORT, 0, false);
+  >     spi_gpio_init(PIN_CS);
+  > 
+  >     spi_mutex = xSemaphoreCreateMutex();
+  > 
+  >     xTaskCreate(spi_task, "SPI Task", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 1, NULL);
+  >     xTaskCreate(high_priority_task, "High Priority Task", configMINIMAL_STACK_SIZE, NULL, TASK1_PRIORITY, NULL);
+  >     xTaskCreate(low_priority_task, "Low Priority Task", configMINIMAL_STACK_SIZE, NULL, TASK2_PRIORITY, NULL);
+  > 
+  >     gpio_set_irq_enabled_with_callback(PIN_MISO, GPIO_IRQ_EDGE_RISE, true, &spi_isr);
+  > 
+  >     vTaskStartScheduler();
+  > 
+  >     return 0;
+  > }
+  > ```
 - Was sind Real-Time Operating-Systems (RTOS) und wie kann man diese auf Mikrokontrollern einsetzen?
+  
+  > Real-Time Operating-Systems (RTOS) sind spezialisierte Betriebssysteme, die für die Verarbeitung von Echtzeit-Anwendungen optimiert sind. Im Gegensatz zu allgemeinen Betriebssystemen, die darauf ausgelegt sind, mehrere Aufgaben gleichzeitig auszuführen und eine umfangreiche Benutzeroberfläche bereitzustellen, liegt der Fokus von RTOS auf der zuverlässigen Ausführung von Aufgaben innerhalb von bestimmten zeitlichen Vorgaben.
+  > 
+  > RTOS ermöglichen es, komplexe Echtzeit-Anwendungen auf Mikrokontrollern auszuführen, die normalerweise nicht in der Lage wären, diese Aufgaben alleine zu bewältigen. RTOS bieten auch Mechanismen zur Priorisierung und Planung von Aufgaben, um sicherzustellen, dass die wichtigsten Aufgaben zuerst ausgeführt werden. [11]
 
 ## Implementierung
 
@@ -551,3 +741,17 @@ int main() {
 [4] "Raspberry Pi RP2040 Template"; "Michael Borko"; [Link](https://github.com/mborko/pico-template); zuletzt besucht am 03.03.2023
 
 [5] "Kleine Ampelkunde - Lichtzeichen"; "wien.gv.at"; [Link](https://www.wien.gv.at/verkehr/ampeln/ampelkunde.html); zuletzt besucht am 03.03.2023
+
+[6] "Serial Peripheral Interface"; "wikipedia.org"; [Link](https://de.wikipedia.org/wiki/Serial_Peripheral_Interface); zuletzt besucht am 04.03.2023
+
+[7] "17 Advantages and Disadvantages of Bus Topology"; "vittana.org"; [Link](https://vittana.org/17-advantages-and-disadvantages-of-bus-topology); zuletzt besucht am 04.03.2023
+
+[8] "hardware_watchdog"; "raspberrypi.com"; [Link](https://www.raspberrypi.com/documentation/pico-sdk/hardware.html#hardware_watchdog); zuletzt besucht am 04.03.2023
+
+[9] "Task Priorities"; "freertos.org"; [Link](https://www.freertos.org/RTOS-task-priority.html); zuletzt besucht am 04.03.2023
+
+[10] "vTaskPrioritySet"; "freertos.org"; [Link](https://www.freertos.org/a00129.html); zuletzt besucht am 04.03.2023
+
+[11] "Echtzeitbetriebssysteme (RTOS) und ihre Anwendungen"; "digikey.de"; [Link](https://www.digikey.de/de/articles/real-time-operating-systems-and-their-applications); zuletzt besucht am 04.03.2023
+
+[12] "Echtzeit: Grundlagen von Echtzeitsystemen"; "embedded-software-engineering.de"; [Link](https://www.embedded-software-engineering.de/echtzeit-grundlagen-von-echtzeitsystemen-a-5897f8abe8f52370ee04a724b23339f8/); zuletzt besucht am 04.03.2023
