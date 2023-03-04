@@ -108,7 +108,7 @@ Wir wollen unsere Ampelschaltung möglichst schön implementieren, daher benutze
 Daher definieren wir unsere States und die Anzahl:
 
 ```c
-#define NUM_STATES 6
+#define NUM_STATES 7
 
 typedef enum {
     STATE_YELLOW_BLINKING,
@@ -117,13 +117,14 @@ typedef enum {
     STATE_RED_YELLOW,
     STATE_GREEN,
     STATE_GREEN_BLINKING,
+    STATE_ERROR,
 } State;
 ```
 
 Außerdem braucht es einen default Zustand:
 
 ```c
-State state = STATE_YELLOW_BLINKING;
+State state = STATE_ERROR;
 ```
 
 Des weiteren brauchen wir unsere LED Pins, da wir diese ja Ein- und Ausschalten möchten:
@@ -174,6 +175,14 @@ static void init_pins(void) {
 Nun können wir uns daran setzen, die einzelnen Funktionen für die verschiedenen Ampelstates zu erstellen. (ACHTUNG: `vTaskDelay` ist bereits eine freeRTOS methode und sollte mit `sleep_ms` ersetzt werden sofern man kein freeRTOS verwendet.)
 
 ```c
+static void state_error(void) {
+    gpio_put(PICO_DEFAULT_LED_PIN, 1);
+    gpio_put(pins[LIGHT_YELLOW], 1);
+    vTaskDelay(DURATION_YELLOW_BLINKING);
+    gpio_put(pins[LIGHT_YELLOW], 0);
+    vTaskDelay(DURATION_YELLOW_BLINKING);
+}
+
 static void state_yellow_blinking(void) {
     for (int i = 0; i < 10; i++) {
         gpio_put(pins[LIGHT_YELLOW], 1);
@@ -239,6 +248,7 @@ static void state_red(void);
 static void state_red_yellow(void);
 static void state_green(void);
 static void state_green_blinking(void);
+static void state_error(void);
 
 static State_Function state_functions[NUM_STATES] = {
     state_yellow_blinking,
@@ -247,6 +257,7 @@ static State_Function state_functions[NUM_STATES] = {
     state_red_yellow,
     state_green,
     state_green_blinking,
+    state_error,
 };
 ```
 
@@ -298,9 +309,9 @@ Diese haben wir in Hex Code codiert:
 #define STATUS_RED_YELLOW     0xD
 #define STATUS_GREEN          0x2
 #define STATUS_GREEN_BLINKING 0x5
-#define STATUS_YELLOW          0x8
+#define STATUS_YELLOW          0x8
 #define STATUS_YELLOW_BLINKING 0x1
-#define ERROR_CODE 0xFF
+#define ERROR_CODE 0xF
 ```
 
 Des weiteren benötigen wir eine Hashmap die jeden dieser Codes einem Status zuordnet:
@@ -317,7 +328,8 @@ static StateStatusPair stateStatusMap[] = {
     { STATE_RED, STATUS_RED },
     { STATE_RED_YELLOW, STATUS_RED_YELLOW },
     { STATE_GREEN, STATUS_GREEN },
-    { STATE_GREEN_BLINKING, STATUS_GREEN_BLINKING }
+    { STATE_GREEN_BLINKING, STATUS_GREEN_BLINKING },
+    { STATE_ERROR, ERROR_CODE},
 };
 
 static uint8_t getStatusForState(State state) {
@@ -353,44 +365,36 @@ void handle_state(void* p) {
 Das Daten versenden ist dann wesentlich komplexer, hier müssen wir nämlich nicht nur die Daten über den SPI Bus verschicken, sondern auch darauf achten, was zurückkommt, den watchdog aktualisieren und im Fehlerfall in den Fehlermode gehen und die Ampel herunterfahren.
 
 ```c
-#define ERROR_CODE 0xFF
 void transmit_state(void* p) {
-    uint8_t rx_buffer[10];
+    uint8_t rx_buffer[1];
     while (true) {
-        gpio_put(PIN_CS, 0);
-        gpio_put(PICO_DEFAULT_LED_PIN, 1);
-
-        uint8_t send_buf = getStatusForState(state);
-        if (spi_is_writable(spi0))
+        if (state != STATE_ERROR)
         {
-            spi_write_read_blocking(spi0, &send_buf, rx_buffer, sizeof(send_buf));
+            gpio_put(PICO_DEFAULT_LED_PIN, 1);
+
+            uint8_t send_buf[1] = {getStatusForState(state)};
+            int len = 0;
+            if (spi_is_writable(spi0))
+            {
+                len = spi_write_read_blocking(spi0, send_buf, rx_buffer, sizeof(send_buf));
+            }
+
+            if (rx_buffer[0] != ERROR_CODE && len > 0)
+            {
+                watchdog_update();
+                vTaskDelay(10);
+                gpio_put(PICO_DEFAULT_LED_PIN, 0);
+                vTaskDelay(10);
+            }
         } else {
-            vTaskDelete(tsStateHandler);
-            break;
-        }
-
-        gpio_put(PIN_CS, 1);
-
-        vTaskDelay(10);
-        gpio_put(PICO_DEFAULT_LED_PIN, 0);
-        vTaskDelay(10);
-
-        if (rx_buffer[0] != ERROR_CODE)
-        {
+            if (gpio_get(PIN_CS))
+            {
+                state = STATE_YELLOW_BLINKING;
+            } 
             watchdog_update();
+            vTaskDelay(30);
         }
     }
-
-    while (1)
-    {
-        gpio_put(PICO_DEFAULT_LED_PIN, 1);
-
-        gpio_put(pins[LIGHT_YELLOW], 1);
-        sleep_ms(DURATION_YELLOW_BLINKING);
-        gpio_put(pins[LIGHT_YELLOW], 0);
-        sleep_ms(DURATION_YELLOW_BLINKING);
-    }
-
 }
 ```
 
@@ -401,22 +405,20 @@ int main() {
     init_pins();
     init_spi();
 
+    if (!watchdog_caused_reboot()) {
+        state = STATE_YELLOW_BLINKING;
+    } 
+
+    watchdog_enable(600, false);
+
     xTaskCreate(transmit_state, "dataTransmitter", 1024, NULL, 1, &tsDataTransmitter);
     xTaskCreate(handle_state, "stateHandler", 1024, NULL, 1, &tsStateHandler);
     vTaskStartScheduler();
 
-    watchdog_enable(60, 1);
-
     while (true)
     {
-        gpio_put(PICO_DEFAULT_LED_PIN, 1);
-
-        gpio_put(pins[LIGHT_YELLOW], 1);
-        sleep_ms(DURATION_YELLOW_BLINKING);
-        gpio_put(pins[LIGHT_YELLOW], 0);
-        sleep_ms(DURATION_YELLOW_BLINKING);
+        //never reached
     }
-
 }
 ```
 
@@ -455,7 +457,7 @@ static void init_spi(void) {
 Auch beim Master PICO verwenden wir die Default LED, daher müssen wir folgendes definieren:
 
 ```c
-#define ERROR_CODE 0xFF
+#define ERROR_CODE 0xF
 #define PICO_DEFAULT_LED_PIN 25
 ```
 
@@ -495,7 +497,7 @@ Und einen etwas komplexeren DataHandler Task:
 
 ```c
 void tDataHandler(void* p) {
-    uint8_t buffer[10];
+    uint8_t buffer[1];
     while (true) {
         gpio_put(PIN_CS, 0);
         if (spi_is_readable(spi0))
@@ -503,12 +505,12 @@ void tDataHandler(void* p) {
             timestamp = xTaskGetTickCount();
             spi_read_blocking(spi0, 0, buffer, sizeof(buffer));
         }
-
-        if ((xTaskGetTickCount() - timestamp) > 60)
+        
+        if ((xTaskGetTickCount() - timestamp) > pdMS_TO_TICKS(60))
         {
             if (spi_is_writable(spi0))
             {
-                uint8_t send[] = {ERROR_CODE};
+                uint8_t send[1] = {ERROR_CODE};
                 spi_write_blocking(spi0, send, sizeof(send));
             }
         }
