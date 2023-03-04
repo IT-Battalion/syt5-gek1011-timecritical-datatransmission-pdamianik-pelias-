@@ -8,7 +8,7 @@
 #define PIN_CS 17 //cs
 #define PIN_RX 21 //miso
 #define PIN_TX 19 //mosi
-#define ERROR_CODE 0xFF
+#define ERROR_CODE 0xF
 #define LIGHT_RED    0
 #define LIGHT_YELLOW 1
 #define LIGHT_GREEN  2
@@ -25,7 +25,7 @@
 #define STATUS_GREEN_BLINKING 0x5
 #define STATUS_YELLOW         0x8
 #define STATUS_YELLOW_BLINKING 0x1
-#define NUM_STATES 6
+#define NUM_STATES 7
 
 typedef enum {
     STATE_YELLOW_BLINKING,
@@ -34,6 +34,7 @@ typedef enum {
     STATE_RED_YELLOW,
     STATE_GREEN,
     STATE_GREEN_BLINKING,
+    STATE_ERROR
 } State;
 
 typedef struct {
@@ -47,7 +48,8 @@ static StateStatusPair stateStatusMap[] = {
     { STATE_RED, STATUS_RED },
     { STATE_RED_YELLOW, STATUS_RED_YELLOW },
     { STATE_GREEN, STATUS_GREEN },
-    { STATE_GREEN_BLINKING, STATUS_GREEN_BLINKING }
+    { STATE_GREEN_BLINKING, STATUS_GREEN_BLINKING },
+    { STATE_ERROR, ERROR_CODE},
 };
 
 TaskHandle_t tsDataTransmitter = NULL;
@@ -61,6 +63,7 @@ static void state_red(void);
 static void state_red_yellow(void);
 static void state_green(void);
 static void state_green_blinking(void);
+static void state_error(void);
 
 static State_Function state_functions[NUM_STATES] = {
     state_yellow_blinking,
@@ -69,6 +72,7 @@ static State_Function state_functions[NUM_STATES] = {
     state_red_yellow,
     state_green,
     state_green_blinking,
+    state_error,
 };
 
 static const int pins[] = {
@@ -76,6 +80,8 @@ static const int pins[] = {
     LIGHT_YELLOW,
     LIGHT_GREEN,
 };
+
+State state = STATE_ERROR;
 
 static uint8_t getStatusForState(State state) {
     for (int i = 0; i < NUM_STATES; i++) {
@@ -105,45 +111,36 @@ static void init_spi(void) {
     gpio_set_function(PIN_TX, GPIO_FUNC_SPI);
 } 
 
-State state = STATE_YELLOW_BLINKING;
-
 void transmit_state(void* p) {
-    uint8_t rx_buffer[10];
+    uint8_t rx_buffer[1];
     while (true) {
-        gpio_put(PIN_CS, 0);
-        gpio_put(PICO_DEFAULT_LED_PIN, 1);
-
-        uint8_t send_buf = getStatusForState(state);
-        if (spi_is_writable(spi0))
+        if (state != STATE_ERROR)
         {
-            spi_write_read_blocking(spi0, &send_buf, rx_buffer, sizeof(send_buf));
+            gpio_put(PICO_DEFAULT_LED_PIN, 1);
+
+            uint8_t send_buf[1] = {getStatusForState(state)};
+            int len = 0;
+            if (spi_is_writable(spi0))
+            {
+                len = spi_write_read_blocking(spi0, send_buf, rx_buffer, sizeof(send_buf));
+            }
+
+            if (rx_buffer[0] != ERROR_CODE && len > 0)
+            {
+                watchdog_update();
+                vTaskDelay(10);
+                gpio_put(PICO_DEFAULT_LED_PIN, 0);
+                vTaskDelay(10);
+            }
         } else {
-            vTaskDelete(tsStateHandler);
-            break;
-        }
-        
-        gpio_put(PIN_CS, 1);
-
-        vTaskDelay(10);
-        gpio_put(PICO_DEFAULT_LED_PIN, 0);
-        vTaskDelay(10);
-
-        if (rx_buffer[0] != ERROR_CODE)
-        {
+            if (gpio_get(PIN_CS))
+            {
+                state = STATE_YELLOW_BLINKING;
+            } 
             watchdog_update();
+            vTaskDelay(30);
         }
     }
-
-    while (1)
-    {
-        gpio_put(PICO_DEFAULT_LED_PIN, 1);
-
-        gpio_put(pins[LIGHT_YELLOW], 1);
-        sleep_ms(DURATION_YELLOW_BLINKING);
-        gpio_put(pins[LIGHT_YELLOW], 0);
-        sleep_ms(DURATION_YELLOW_BLINKING);
-    }
-    
 }
 
 void handle_state(void* p) {
@@ -159,22 +156,28 @@ int main() {
     init_pins();
     init_spi();
 
+    if (!watchdog_caused_reboot()) {
+        state = STATE_YELLOW_BLINKING;
+    } 
+
+    watchdog_enable(600, false);
+
     xTaskCreate(transmit_state, "dataTransmitter", 1024, NULL, 1, &tsDataTransmitter);
     xTaskCreate(handle_state, "stateHandler", 1024, NULL, 1, &tsStateHandler);
     vTaskStartScheduler();
-    
-    watchdog_enable(60, 1);
 
     while (true)
     {
-        gpio_put(PICO_DEFAULT_LED_PIN, 1);
-
-        gpio_put(pins[LIGHT_YELLOW], 1);
-        sleep_ms(DURATION_YELLOW_BLINKING);
-        gpio_put(pins[LIGHT_YELLOW], 0);
-        sleep_ms(DURATION_YELLOW_BLINKING);
+        //never reached
     }
-    
+}
+
+static void state_error(void) {
+    gpio_put(PICO_DEFAULT_LED_PIN, 1);
+    gpio_put(pins[LIGHT_YELLOW], 1);
+    vTaskDelay(DURATION_YELLOW_BLINKING);
+    gpio_put(pins[LIGHT_YELLOW], 0);
+    vTaskDelay(DURATION_YELLOW_BLINKING);
 }
 
 static void state_yellow_blinking(void) {

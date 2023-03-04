@@ -4,7 +4,7 @@
 #include "task.h"
 #include "hardware/watchdog.h"
 
-#define ERROR_CODE 0xFF
+#define ERROR_CODE 0xF
 #define PICO_DEFAULT_LED_PIN 25
 
 #define PIN_SCK 2 //sck
@@ -40,7 +40,7 @@ void tBlinker(void* p) {
 }
 
 void tDataHandler(void* p) {
-    uint8_t buffer[10];
+    uint8_t buffer[1];
     while (true) {
         gpio_put(PIN_CS, 0);
         if (spi_is_readable(spi0))
@@ -49,11 +49,11 @@ void tDataHandler(void* p) {
             spi_read_blocking(spi0, 0, buffer, sizeof(buffer));
         }
         
-        if ((xTaskGetTickCount() - timestamp) > 60)
+        if ((xTaskGetTickCount() - timestamp) > pdMS_TO_TICKS(60))
         {
             if (spi_is_writable(spi0))
             {
-                uint8_t send[] = {ERROR_CODE};
+                uint8_t send[1] = {ERROR_CODE};
                 spi_write_blocking(spi0, send, sizeof(send));
             }
         }
