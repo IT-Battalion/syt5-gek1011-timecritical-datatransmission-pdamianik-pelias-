@@ -16,6 +16,25 @@ TaskHandle_t tsDataHandler = NULL;
 TaskHandle_t tsBlinker = NULL;
 TickType_t timestamp = 0;
 
+static void init_pins(void);
+static void init_spi(void);
+static void tBlinker(void*);
+static void tDataHandler(void*);
+
+int main() {
+    init_pins();
+    init_spi();
+
+    xTaskCreate(tDataHandler, "dataHandler", 1024, NULL, 1, &tsDataHandler);
+    xTaskCreate(tBlinker, "blinkHandler", 1024, NULL, 1, &tsBlinker);
+    vTaskStartScheduler();
+
+    while (true)
+    {
+        //never reached
+    }
+}
+
 static void init_pins(void) {
     gpio_init(PICO_DEFAULT_LED_PIN);
     gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
@@ -59,19 +78,5 @@ void tDataHandler(void* p) {
         }
         gpio_put(PIN_CS, 1);
         vTaskDelay(30);
-    }
-}
-
-int main() {
-    init_pins();
-    init_spi();
-
-    xTaskCreate(tDataHandler, "dataHandler", 1024, NULL, 1, &tsDataHandler);
-    xTaskCreate(tBlinker, "blinkHandler", 1024, NULL, 1, &tsBlinker);
-    vTaskStartScheduler();
-
-    while (true)
-    {
-        gpio_put(PICO_DEFAULT_LED_PIN, 1);
     }
 }

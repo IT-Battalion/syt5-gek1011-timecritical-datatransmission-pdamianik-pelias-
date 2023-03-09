@@ -92,6 +92,31 @@ static uint8_t getStatusForState(State state) {
     return -1;
 }
 
+static void init_pins(void);
+static void init_spi(void);
+static void tTransmitState(void*);
+static void tHandleState(void*);
+
+int main() {
+    init_pins();
+    init_spi();
+
+    if (!watchdog_caused_reboot()) {
+        state = STATE_YELLOW_BLINKING;
+    } 
+
+    watchdog_enable(600, false);
+
+    xTaskCreate(tTransmitState, "dataTransmitter", 1024, NULL, 1, &tsDataTransmitter);
+    xTaskCreate(tHandleState, "stateHandler", 1024, NULL, 1, &tsStateHandler);
+    vTaskStartScheduler();
+
+    while (true)
+    {
+        //never reached
+    }
+}
+
 static void init_pins(void) {
     gpio_init(PICO_DEFAULT_LED_PIN);
     gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
@@ -111,7 +136,15 @@ static void init_spi(void) {
     gpio_set_function(PIN_TX, GPIO_FUNC_SPI);
 } 
 
-void transmit_state(void* p) {
+static void state_error(void) {
+    gpio_put(PICO_DEFAULT_LED_PIN, 1);
+    gpio_put(pins[LIGHT_YELLOW], 1);
+    vTaskDelay(DURATION_YELLOW_BLINKING);
+    gpio_put(pins[LIGHT_YELLOW], 0);
+    vTaskDelay(DURATION_YELLOW_BLINKING);
+}
+
+void tTransmitState(void* p) {
     uint8_t rx_buffer[1];
     while (true) {
         if (state != STATE_ERROR)
@@ -143,41 +176,13 @@ void transmit_state(void* p) {
     }
 }
 
-void handle_state(void* p) {
+void tHandleState(void* p) {
     while (true) {
         for (int i = 0; i < sizeof(pins) / sizeof(pins[0]); i++) {
             gpio_put(pins[i], 0);
         }
         state_functions[state]();
     }
-}
-
-int main() {
-    init_pins();
-    init_spi();
-
-    if (!watchdog_caused_reboot()) {
-        state = STATE_YELLOW_BLINKING;
-    } 
-
-    watchdog_enable(600, false);
-
-    xTaskCreate(transmit_state, "dataTransmitter", 1024, NULL, 1, &tsDataTransmitter);
-    xTaskCreate(handle_state, "stateHandler", 1024, NULL, 1, &tsStateHandler);
-    vTaskStartScheduler();
-
-    while (true)
-    {
-        //never reached
-    }
-}
-
-static void state_error(void) {
-    gpio_put(PICO_DEFAULT_LED_PIN, 1);
-    gpio_put(pins[LIGHT_YELLOW], 1);
-    vTaskDelay(DURATION_YELLOW_BLINKING);
-    gpio_put(pins[LIGHT_YELLOW], 0);
-    vTaskDelay(DURATION_YELLOW_BLINKING);
 }
 
 static void state_yellow_blinking(void) {
