@@ -145,13 +145,13 @@ static void state_error(void) {
 }
 
 void tTransmitState(void* p) {
-    uint8_t rx_buffer[1];
+    uint8_t rx_buffer[10];
     while (true) {
         if (state != STATE_ERROR)
         {
             gpio_put(PICO_DEFAULT_LED_PIN, 1);
 
-            uint8_t send_buf[1] = {getStatusForState(state)};
+            uint8_t send_buf[10] = {getStatusForState(state)};
             int len = 0;
             if (spi_is_writable(spi0))
             {

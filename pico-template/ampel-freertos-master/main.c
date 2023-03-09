@@ -59,7 +59,7 @@ void tBlinker(void* p) {
 }
 
 void tDataHandler(void* p) {
-    uint8_t buffer[1];
+    uint8_t buffer[10];
     while (true) {
         gpio_put(PIN_CS, 0);
         if (spi_is_readable(spi0))
@@ -72,7 +72,7 @@ void tDataHandler(void* p) {
         {
             if (spi_is_writable(spi0))
             {
-                uint8_t send[1] = {ERROR_CODE};
+                uint8_t send[10] = {ERROR_CODE};
                 spi_write_blocking(spi0, send, sizeof(send));
             }
         }
