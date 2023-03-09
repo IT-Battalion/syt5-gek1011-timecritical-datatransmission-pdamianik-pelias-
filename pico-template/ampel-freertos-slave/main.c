@@ -5,52 +5,37 @@
 #include "hardware/watchdog.h"
 
 #define PIN_SCK 18 //sck
-#define PIN_CS 17 //cs
-#define PIN_RX 21 //miso
-#define PIN_TX 19 //mosi
-#define ERROR_CODE 0xF
+#define PIN_CS  17 //cs
+#define PIN_RX  21 //miso
+#define PIN_TX  19 //mosi
+#define ERROR_CODE   0xF
 #define LIGHT_RED    0
 #define LIGHT_YELLOW 1
 #define LIGHT_GREEN  2
-#define PICO_DEFAULT_LED_PIN 25
+#define PICO_DEFAULT_LED_PIN     25
 #define DURATION_YELLOW_BLINKING 500
 #define DURATION_YELLOW          4000
 #define DURATION_RED             5000
 #define DURATION_RED_YELLOW      4000
 #define DURATION_GREEN           5000
 #define DURATION_GREEN_BLINKING  500
-#define STATUS_RED            0xE
-#define STATUS_RED_YELLOW     0xD
-#define STATUS_GREEN          0x2
-#define STATUS_GREEN_BLINKING 0x5
-#define STATUS_YELLOW         0x8
+#define STATUS_RED             0xE
+#define STATUS_RED_YELLOW      0xD
+#define STATUS_GREEN           0x2
+#define STATUS_GREEN_BLINKING  0x5
+#define STATUS_YELLOW          0x8
 #define STATUS_YELLOW_BLINKING 0x1
 #define NUM_STATES 7
 
 typedef enum {
-    STATE_YELLOW_BLINKING,
-    STATE_YELLOW,
-    STATE_RED,
-    STATE_RED_YELLOW,
-    STATE_GREEN,
-    STATE_GREEN_BLINKING,
-    STATE_ERROR
+    STATE_YELLOW_BLINKING = STATUS_YELLOW_BLINKING,
+    STATE_YELLOW = STATUS_YELLOW,
+    STATE_RED = STATUS_RED,
+    STATE_RED_YELLOW = STATUS_RED_YELLOW,
+    STATE_GREEN = STATUS_GREEN,
+    STATE_GREEN_BLINKING = STATUS_GREEN_BLINKING,
+    STATE_ERROR = ERROR_CODE,
 } State;
-
-typedef struct {
-    State state;
-    uint8_t status;
-} StateStatusPair;
-
-static StateStatusPair stateStatusMap[] = {
-    { STATE_YELLOW_BLINKING, STATUS_YELLOW_BLINKING },
-    { STATE_YELLOW, STATUS_YELLOW },
-    { STATE_RED, STATUS_RED },
-    { STATE_RED_YELLOW, STATUS_RED_YELLOW },
-    { STATE_GREEN, STATUS_GREEN },
-    { STATE_GREEN_BLINKING, STATUS_GREEN_BLINKING },
-    { STATE_ERROR, ERROR_CODE},
-};
 
 TaskHandle_t tsDataTransmitter = NULL;
 TaskHandle_t tsStateHandler = NULL;
@@ -82,15 +67,6 @@ static const int pins[] = {
 };
 
 State state = STATE_ERROR;
-
-static uint8_t getStatusForState(State state) {
-    for (int i = 0; i < NUM_STATES; i++) {
-        if (stateStatusMap[i].state == state) {
-            return stateStatusMap[i].status;
-        }
-    }
-    return -1;
-}
 
 static void init_pins(void);
 static void init_spi(void);
@@ -151,7 +127,7 @@ void tTransmitState(void* p) {
         {
             gpio_put(PICO_DEFAULT_LED_PIN, 1);
 
-            uint8_t send_buf[10] = {getStatusForState(state)};
+            uint8_t send_buf[10] = {state};
             int len = 0;
             if (spi_is_writable(spi0))
             {
