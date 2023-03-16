@@ -3,7 +3,7 @@ add_executable(ampel-freertos-slave
         )
 
 # pull in common dependencies
-target_link_libraries(ampel-freertos-slave pico_stdlib hardware_spi pico_multicore FreeRTOS)
+target_link_libraries(ampel-freertos-slave pico_stdlib hardware_spi hardware_dma pico_multicore FreeRTOS)
 
 # create map/bin/hex file etc.
 pico_add_extra_outputs(ampel-freertos-slave)
