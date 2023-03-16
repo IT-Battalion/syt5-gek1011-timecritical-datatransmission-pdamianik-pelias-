@@ -9,6 +9,7 @@
   > Theoretisch kann man an einen SPI Bus unendlich viele Teilnehmer hängen (max. 1 Master, viele Slaves). Für jeden zusätzlichen Teilnehmer wird lediglich ein zusätzlich ChipSelect benötigt.
   > 
   > Ganz generell benötigt man für SPI vier Anschlüsse:
+  > 
   > - MOSI (**M**aster **O**ut -> **S**lave **I**n)
   > 
   > - MISO (**M**aster **I**n <- **S**lave **O**ut)
@@ -17,13 +18,12 @@
   > 
   > - CS (Chip Select)
   > 
-  > 
   > Mithilfe des Chip Select gibt der Master an, welcher Slave sprechen darf. Es kann immer nur ein Slave gleichzeitig sprechen. (Der Master setzt den CS entweder HIGH oder LOW)
-  > 
   > 
   > Der SPI Bus ermöglicht umfangreiche Einstellungen, unter anderem kann man die Taktfrequenz und die Bit länge der Übertragung selbstständig konfigurieren.
   > 
   > [6][3]
+
 - Welche Vorteile ergeben sich bei der Verwendung eines Kommunikationsbusses?
   
   > Die Bus-Topologie ist eine Art Netzwerktopologie, die mehrere Vorteile bietet. Einer der Vorteile ist, dass es sehr einfach ist, ein neues Gerät mit dem Netzwerk zu verbinden, solange das Gerät über den passenden Anschlussmechanismus verfügt. Das neue Gerät wird einfach mit der linearen Bus-Topologie verbunden und ist sofort Teil des Netzwerks. 
@@ -43,9 +43,11 @@
   > Ein weiterer wichtiger Aspekt beim SPI-Bus ist die Clock, also das Taktsignal, das die Datenübertragung steuert. Die Frequenz der Clock kann je nach Gerät und Anwendung unterschiedlich sein. Eine höhere Clock-Frequenz ermöglicht eine schnellere Datenübertragung, aber kann auch zu Problemen mit der Signalintegrität führen, wenn das Kabel oder die Leiterplatte zu lang oder zu komplex ist.
   > 
   > [6][3]
+
 - Wie werden zeitkritische Anwendungen (real-time) eingeteilt?
   
   > Zeitkritische Anwendungen werden in Echtzeit-Systemen (Real-Time Systems) eingeteilt, die die Fähigkeit besitzen, bestimmte zeitliche Anforderungen zu erfüllen. Echtzeitsysteme lassen sich in der Regel in zwei Kategorien einteilen: 
+  > 
   > - harte Echtzeitsysteme
   > 
   > - weiche Echtzeitsysteme.
@@ -53,6 +55,7 @@
   > Harte Echtzeitsysteme sind Systeme, bei denen das Nichterfüllen der zeitlichen Anforderungen katastrophale Folgen hat. In solchen Systemen müssen die Ergebnisse innerhalb eines genau definierten Zeitrahmens vorliegen. 
   > 
   > Weiche Echtzeitsysteme hingegen haben weniger kritische Anforderungen an die Zeitgenauigkeit und können in der Regel Verzögerungen tolerieren. [12]
+
 - Wie kommt ein Watchdog bei zeitkritischen Anwendungen zum Einsatz?
   
   > Dies ist ein Countdown-Timer, der Teile des Chips neu starten kann, wenn
@@ -62,38 +65,37 @@
   > periodisch einen Wert an den Watchdog schreiben, um zu verhindern, dass 
   > er Null erreicht. [8]
   > 
-  > 
-  > 
   > ```c
   > #include <stdio.h>
   > #include "pico/stdlib.h"
   > #include "hardware/watchdog.h"
-  >  
+  > 
   > 
   > int main() {
   >     stdio_init_all();
-  >  
+  > 
   >     if (watchdog_caused_reboot()) {
   >         printf("Rebooted by Watchdog!\n");
   >         return 0;
   >     } else {
   >         printf("Clean boot\n");
   >     }
-  >  
+  > 
   >     // Enable the watchdog, requiring the watchdog to be updated every 100ms or the chip will reboot
   >     // second arg is pause on debug which means the watchdog will pause when stepping through code
   >     watchdog_enable(100, 1);
-  >  
+  > 
   >     for (uint i = 0; i < 5; i++) {
   >         printf("Updating watchdog %d\n", i);
   >         watchdog_update();
   >     }
-  >  
+  > 
   >     // Wait in an infinite loop and don't update the watchdog so it reboots us
   >     printf("Waiting to be rebooted by watchdog\n");
   >     while(1);
   > }
   > ```
+
 - Wie kann man Interrupts priorisieren?
   
   > Jede Task wird eine Priorität von 0 bis (configMAX_PRIORITIES - 1) 
@@ -194,6 +196,7 @@
   >     return 0;
   > }
   > ```
+
 - Was sind Real-Time Operating-Systems (RTOS) und wie kann man diese auf Mikrokontrollern einsetzen?
   
   > Real-Time Operating-Systems (RTOS) sind spezialisierte Betriebssysteme, die für die Verarbeitung von Echtzeit-Anwendungen optimiert sind. Im Gegensatz zu allgemeinen Betriebssystemen, die darauf ausgelegt sind, mehrere Aufgaben gleichzeitig auszuführen und eine umfangreiche Benutzeroberfläche bereitzustellen, liegt der Fokus von RTOS auf der zuverlässigen Ausführung von Aufgaben innerhalb von bestimmten zeitlichen Vorgaben.
@@ -240,12 +243,16 @@ Für einen SPI Bus benötigt man vier Verbindungen. [3]
 
 Der erste Schritt ist daher am PinOut [1] die notwendigen Anschlüsse/Pins zu identifizieren und die beiden PICO's miteinander zu verkabeln. In meinem Fall habe ich folgende Pins gewählt:
 
-| PICO 1 (Slave)  | PICO 2 (Master) |
-| --------------- | --------------- |
-| GP18 (SPI0 SCK) | GP2 (SPI0 SCK)  |
-| GP19 (SPI0 TX)  | GP3 (SPI0 TX)   |
-| GP16 (SPI0 RX)  | GP4 (SPI0 RX)   |
-| GP17 (SPI0 CSn) | GP5 (SPI0 CSn)  |
+
+
+
+
+| PICO 1 (Slave)  | PICO 2 (Master) | Analyser |
+| --------------- | --------------- | -------- |
+| GP18 (SPI0 SCK) | GP2 (SPI0 SCK)  | GELB     |
+| GP19 (SPI0 TX)  | GP3 (SPI0 TX)   | BLAU     |
+| GP16 (SPI0 RX)  | GP4 (SPI0 RX)   | GRAU     |
+| GP17 (SPI0 CSn) | GP5 (SPI0 CSn)  |          |
 
 Wichtig zu beachten ist hier, dass man immer den selben SPI (in meinem Fall SPI0) wählt. 
 
@@ -695,7 +702,7 @@ void tDataHandler(void* p) {
             timestamp = xTaskGetTickCount();
             spi_read_blocking(spi0, 0, buffer, sizeof(buffer));
         }
-        
+
         if ((xTaskGetTickCount() - timestamp) > pdMS_TO_TICKS(60))
         {
             if (spi_is_writable(spi0))
