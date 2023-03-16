@@ -1,12 +1,13 @@
 #include "pico/stdlib.h"
 #include "hardware/spi.h"
+#include "hardware/dma.h"
 #include "FreeRTOS.h"
 #include "task.h"
 #include "hardware/watchdog.h"
 
 #define PIN_SCK 18 //sck
 #define PIN_CS 17 //cs
-#define PIN_RX 21 //miso
+#define PIN_RX 16 //miso
 #define PIN_TX 19 //mosi
 #define ERROR_CODE 0xF
 #define LIGHT_RED    0
@@ -127,13 +128,20 @@ static void init_pins(void) {
     }
 }
 
+dma_channel_config dma_cfg;
+
 static void init_spi(void) {
-    spi_init(spi0, 9600); 
+    spi_init(spi0, 1000*1000); 
     spi_set_slave(spi0, true);
     gpio_set_function(PIN_RX, GPIO_FUNC_SPI);
     gpio_set_function(PIN_CS, GPIO_FUNC_SPI);
     gpio_set_function(PIN_SCK, GPIO_FUNC_SPI);
     gpio_set_function(PIN_TX, GPIO_FUNC_SPI);
+
+    dma_cfg = dma_channel_get_default_config(spi_get_index(spi0));
+    channel_config_set_transfer_data_size(&dma_cfg, DMA_SIZE_8);
+    channel_config_set_dreq(&dma_cfg, spi_get_index(spi0) ? DREQ_SPI1_RX : DREQ_SPI0_RX);
+    channel_config_set_write_increment(&dma_cfg, true);
 } 
 
 static void state_error(void) {
@@ -145,26 +153,45 @@ static void state_error(void) {
 }
 
 void tTransmitState(void* p) {
-    uint8_t rx_buffer[10];
+    uint8_t rx_buffer[1];
     while (true) {
         if (state != STATE_ERROR)
         {
             gpio_put(PICO_DEFAULT_LED_PIN, 1);
 
-            uint8_t send_buf[10] = {getStatusForState(state)};
-            int len = 0;
-            if (spi_is_writable(spi0))
-            {
-                len = spi_write_read_blocking(spi0, send_buf, rx_buffer, sizeof(send_buf));
-            }
+            uint8_t send_buf[1] = {getStatusForState(state)};
+            const uint dma_channel = dma_claim_unused_channel(true);
 
-            if (rx_buffer[0] != ERROR_CODE && len > 0)
+            dma_channel_configure(
+                dma_channel, &dma_cfg,
+                &spi_get_hw(spi0)->dr, 
+                send_buf, 
+                sizeof(send_buf), 
+                true 
+            );
+
+            const uint dma_read = dma_claim_unused_channel(true);
+            dma_channel_configure(
+                dma_read, &dma_cfg,
+                rx_buffer,
+                &spi_get_hw(spi0)->dr,
+                sizeof(rx_buffer),
+                true
+            );
+
+            while (dma_channel_is_busy(dma_read));
+            dma_channel_wait_for_finish_blocking(dma_read);
+
+            if (rx_buffer[0] != ERROR_CODE)
             {
                 watchdog_update();
                 vTaskDelay(10);
                 gpio_put(PICO_DEFAULT_LED_PIN, 0);
                 vTaskDelay(10);
             }
+
+            dma_channel_unclaim(dma_channel);
+            dma_channel_unclaim(dma_read);
         } else {
             if (gpio_get(PIN_CS))
             {

@@ -1,5 +1,6 @@
 #include "pico/stdlib.h"
 #include "hardware/spi.h"
+#include "hardware/dma.h"
 #include "FreeRTOS.h"
 #include "task.h"
 #include "hardware/watchdog.h"
@@ -25,7 +26,7 @@ int main() {
     init_pins();
     init_spi();
 
-    xTaskCreate(tDataHandler, "dataHandler", 1024, NULL, 1, &tsDataHandler);
+    xTaskCreate(tDataHandler, "dataHandler", 1024, NULL, 2, &tsDataHandler);
     xTaskCreate(tBlinker, "blinkHandler", 1024, NULL, 1, &tsBlinker);
     vTaskStartScheduler();
 
@@ -40,13 +41,20 @@ static void init_pins(void) {
     gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
 }
 
+dma_channel_config dma_cfg;
+
 static void init_spi(void) {
-    spi_init(spi0, 9600);
+    spi_init(spi0, 1000*1000);
     spi_set_slave(spi0, false);
     gpio_set_function(PIN_RX, GPIO_FUNC_SPI);
     gpio_set_function(PIN_CS, GPIO_FUNC_SPI);
     gpio_set_function(PIN_SCK, GPIO_FUNC_SPI);
     gpio_set_function(PIN_TX, GPIO_FUNC_SPI);
+
+    dma_cfg = dma_channel_get_default_config(spi_get_index(spi0));
+    channel_config_set_transfer_data_size(&dma_cfg, DMA_SIZE_8);
+    channel_config_set_dreq(&dma_cfg, spi_get_index(spi0) ? DREQ_SPI1_TX : DREQ_SPI0_TX);
+    channel_config_set_read_increment(&dma_cfg, true);
 } 
 
 void tBlinker(void* p) {
@@ -59,24 +67,32 @@ void tBlinker(void* p) {
 }
 
 void tDataHandler(void* p) {
-    uint8_t buffer[10];
+    uint8_t buffer[1];
     while (true) {
-        gpio_put(PIN_CS, 0);
-        if (spi_is_readable(spi0))
-        {
-            timestamp = xTaskGetTickCount();
-            spi_read_blocking(spi0, 0, buffer, sizeof(buffer));
-        }
+        const uint dma_channel = dma_claim_unused_channel(true);
+        dma_channel_configure(
+            dma_channel, &dma_cfg,
+            buffer, 
+            &spi_get_hw(spi0)->dr,  
+            sizeof(buffer), 
+            true  
+        );
+
+        while (dma_channel_is_busy(dma_channel));
+        dma_channel_wait_for_finish_blocking(dma_channel);
         
         if ((xTaskGetTickCount() - timestamp) > pdMS_TO_TICKS(60))
         {
-            if (spi_is_writable(spi0))
-            {
-                uint8_t send[10] = {ERROR_CODE};
-                spi_write_blocking(spi0, send, sizeof(send));
-            }
+            uint8_t send[1] = {ERROR_CODE};
+            dma_channel_configure(
+            dma_channel, &dma_cfg,
+            &spi_get_hw(spi0)->dr,
+            send,
+            sizeof(send), 
+            true 
+        );
         }
-        gpio_put(PIN_CS, 1);
+        dma_channel_unclaim(dma_channel);
         vTaskDelay(30);
     }
 }
