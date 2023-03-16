@@ -128,7 +128,7 @@ static void init_pins(void) {
 }
 
 static void init_spi(void) {
-    spi_init(spi0, 1000 * 1000); 
+    spi_init(spi0, 9600); 
     spi_set_slave(spi0, true);
     gpio_set_function(PIN_RX, GPIO_FUNC_SPI);
     gpio_set_function(PIN_CS, GPIO_FUNC_SPI);
