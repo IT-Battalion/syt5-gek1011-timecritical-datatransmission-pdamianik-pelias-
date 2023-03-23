@@ -6,6 +6,7 @@
 #include "hardware/watchdog.h"
 
 #define ERROR_CODE 0xF
+#define SUCCESS_CODE 0x7
 #define PICO_DEFAULT_LED_PIN 25
 
 #define PIN_SCK 2 //sck
@@ -83,11 +84,11 @@ void tDataHandler(void* p) {
 
         dma_channel_wait_for_finish_blocking(dma_channel);
         
-        if ((xTaskGetTickCount() - timestamp) > pdMS_TO_TICKS(60))
+        const uint dma_write = dma_claim_unused_channel(true);
+        dma_channel_start(dma_write);
+        if ((xTaskGetTickCount() - timestamp) > 60)
         {
             uint8_t send[1] = {ERROR_CODE};
-            const uint dma_write = dma_claim_unused_channel(true);
-            dma_channel_start(dma_write);
             dma_channel_configure(
                 dma_write, 
                 &dma_cfg,
@@ -96,10 +97,21 @@ void tDataHandler(void* p) {
                 sizeof(send), 
                 true 
             );
-            dma_channel_wait_for_finish_blocking(dma_write);
-            dma_channel_unclaim(dma_write);
+        } else {
+            uint8_t send[1] = {SUCCESS_CODE};
+            dma_channel_configure(
+                dma_write, 
+                &dma_cfg,
+                &spi_get_hw(spi0)->dr,
+                send,
+                sizeof(send), 
+                true 
+            );
         }
+        dma_channel_wait_for_finish_blocking(dma_write);
+        dma_channel_unclaim(dma_write);
         dma_channel_unclaim(dma_channel);
         vTaskDelay(30);
+        timestamp = xTaskGetTickCount();
     }
 }
