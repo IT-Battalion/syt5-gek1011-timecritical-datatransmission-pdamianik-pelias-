@@ -86,7 +86,7 @@ void tDataHandler(void* p) {
         
         const uint dma_write = dma_claim_unused_channel(true);
         dma_channel_start(dma_write);
-        if ((xTaskGetTickCount() - timestamp) > 60)
+        if ((xTaskGetTickCount() - timestamp) > pdMS_TO_TICKS(60))
         {
             uint8_t send[1] = {ERROR_CODE};
             dma_channel_configure(
