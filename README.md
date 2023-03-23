@@ -203,6 +203,20 @@
   > 
   > RTOS ermöglichen es, komplexe Echtzeit-Anwendungen auf Mikrokontrollern auszuführen, die normalerweise nicht in der Lage wären, diese Aufgaben alleine zu bewältigen. RTOS bieten auch Mechanismen zur Priorisierung und Planung von Aufgaben, um sicherzustellen, dass die wichtigsten Aufgaben zuerst ausgeführt werden. [11]
 
+#### Borkos blöde Fragen
+
+default Taktfrequenz vom pico
+12MHz
+
+Interrupts vs DMA
+-> Interrupts hat n Interrupthandler der alles blockiert
+-> DMA macht das im Hintergrund der in den Buffer schreibt und Prozessor entlastet
+
+Interrupts
+Wenn bei SPI die Interrupt Flag gesetzt wird wird diese behandelt. Wenn ein neuer Interrupt mit höherer Priotität rein kommt, dann wird der aktuelle Interrupt unterbrochen und der mit der höchsten Priorität ausgeführt
+
+Nach dem ausführen wird die Flag gecleared. Danach springt man zurück zur unterbrochenen Funktion die ausgeführt wird, auch wenn die Flag von diesem Interrupt schon gecleared wurde.
+
 ## Implementierung
 
 ### Setup
@@ -243,18 +257,14 @@ Für einen SPI Bus benötigt man vier Verbindungen. [3]
 
 Der erste Schritt ist daher am PinOut [1] die notwendigen Anschlüsse/Pins zu identifizieren und die beiden PICO's miteinander zu verkabeln. In meinem Fall habe ich folgende Pins gewählt:
 
+| PICO 1 (Slave)  | PICO 2 (Master) | Analyser | Kabelfarbe |
+| --------------- | --------------- | -------- | ---------- |
+| GP18 (SPI0 SCK) | GP2 (SPI0 SCK)  | LILA     | ROT        |
+| GP19 (SPI0 TX)  | GP0 (SPI0 RX)   | GELB     | BLAU       |
+| GP16 (SPI0 RX)  | GP3 (SPI0 TX)   | GRAU     | WEISS      |
+| GP17 (SPI0 CSn) | GP1 (SPI0 CSn)  | BLAU     | SCHWARZ    |
 
-
-
-
-| PICO 1 (Slave)  | PICO 2 (Master) | Analyser |
-| --------------- | --------------- | -------- |
-| GP18 (SPI0 SCK) | GP2 (SPI0 SCK)  | GELB     |
-| GP19 (SPI0 TX)  | GP3 (SPI0 TX)   | BLAU     |
-| GP16 (SPI0 RX)  | GP4 (SPI0 RX)   | GRAU     |
-| GP17 (SPI0 CSn) | GP5 (SPI0 CSn)  |          |
-
-Wichtig zu beachten ist hier, dass man immer den selben SPI (in meinem Fall SPI0) wählt. 
+Wichtig zu beachten ist hier, dass man immer den selben SPI (in meinem Fall SPI0) wählt. Auch wichtig ist, dass TX und RX gekreuzt verkabelt werden. (DMA)
 
 Da wir eine Ampelschaltung bauen möchten, müssen wir natürlich auch noch die LED's richtig am Slave installieren. Da LED's einen Minus und einen Plus Pol (Anode und Kathode) haben, gilt es zunächst einmal herauszufinden was Anode und was Kathode ist. [2]
 
@@ -291,7 +301,7 @@ Hat man das verstanden, kann man beginnen zu entwickeln.
 Im pico-template erstellt man einen neuen Ordner (`ampel-freertos-slave`) und in diesem zwei Files (`main.c`, `CMakeLists.txt`). Das CMakeLists kann aus den anderen Beispielen im Template kopiert werden. Wichtig ist nur, dass die richtigen Libraries gelinkt werden:
 
 ```cmake
-target_link_libraries(ampel-freertos-slave pico_stdlib hardware_spi pico_multicore FreeRTOS)
+target_link_libraries(ampel-freertos-slave pico_stdlib hardware_spi hardware_dma pico_multicore FreeRTOS)
 ```
 
 Im `main.c` kommt der eigentlich wichtige Teil unsere Software hin und ist daher auch wesentlich umfangreicher.
@@ -361,7 +371,7 @@ Das wichtigste zuerst: Die Pins initialisieren, sodass wir sie verwenden können
 static void init_pins(void) {
     gpio_init(PICO_DEFAULT_LED_PIN);
     gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
-
+    
     for (int i = 0; i < sizeof(pins) / sizeof(pins[0]); i++) {
         gpio_init(pins[i]);
         gpio_set_dir(pins[i], GPIO_OUT);
@@ -467,20 +477,26 @@ Für den SPI Bus müssen wir zunächst wieder einige Variablen instanzieren.
 ```c
 #define PIN_SCK 18 //sck
 #define PIN_CS 17 //cs
-#define PIN_RX 21 //miso
+#define PIN_RX 16 //miso
 #define PIN_TX 19 //mosi
 ```
 
-Anschließend müssen wir den SPI Bus wiederum initialisieren, wofür wir auch eine eigene Funktion erstellt haben. Besonders wichtig ist hier, dass der SPI Mode auf slave gesetzt wird:
+Anschließend müssen wir den SPI Bus wiederum initialisieren (und DMA), wofür wir auch eine eigene Funktion erstellt haben. Besonders wichtig ist hier, dass der SPI Mode auf slave gesetzt wird:
 
 ```c
 static void init_spi(void) {
-    spi_init(spi0, 1000 * 1000); 
+    spi_init(spi0, 1000*1000); 
     spi_set_slave(spi0, true);
     gpio_set_function(PIN_RX, GPIO_FUNC_SPI);
     gpio_set_function(PIN_CS, GPIO_FUNC_SPI);
     gpio_set_function(PIN_SCK, GPIO_FUNC_SPI);
     gpio_set_function(PIN_TX, GPIO_FUNC_SPI);
+
+    dma_cfg = dma_channel_get_default_config(spi_get_index(spi0));
+    channel_config_set_transfer_data_size(&dma_cfg, DMA_SIZE_8);
+    channel_config_set_dreq(&dma_cfg, DREQ_SPI0_RX);
+    channel_config_set_write_increment(&dma_cfg, true);
+    channel_config_set_read_increment(&dma_cfg, true);
 } 
 ```
 
@@ -509,6 +525,7 @@ Diese haben wir in Hex Code codiert:
 #define STATUS_YELLOW          0x8
 #define STATUS_YELLOW_BLINKING 0x1
 #define ERROR_CODE 0xF
+#define SUCCESS_CODE 0x7
 ```
 
 Des weiteren benötigen wir eine Hashmap die jeden dieser Codes einem Status zuordnet:
@@ -544,12 +561,13 @@ Und weil wir zwei Tasks benötigen definieren wir auch gleich die beiden Task Va
 ```c
 TaskHandle_t tsDataTransmitter = NULL;
 TaskHandle_t tsStateHandler = NULL;
+dma_channel_config dma_cfg;
 ```
 
 Danach erstellen wir die StateManager Funktion:
 
 ```c
-void handle_state(void* p) {
+void tHandleState(void* p) {
     while (true) {
         for (int i = 0; i < sizeof(pins) / sizeof(pins[0]); i++) {
             gpio_put(pins[i], 0);
@@ -562,7 +580,7 @@ void handle_state(void* p) {
 Das Daten versenden ist dann wesentlich komplexer, hier müssen wir nämlich nicht nur die Daten über den SPI Bus verschicken, sondern auch darauf achten, was zurückkommt, den watchdog aktualisieren und im Fehlerfall in den Fehlermode gehen und die Ampel herunterfahren.
 
 ```c
-void transmit_state(void* p) {
+void tTransmitState(void* p) {
     uint8_t rx_buffer[1];
     while (true) {
         if (state != STATE_ERROR)
@@ -570,19 +588,41 @@ void transmit_state(void* p) {
             gpio_put(PICO_DEFAULT_LED_PIN, 1);
 
             uint8_t send_buf[1] = {getStatusForState(state)};
-            int len = 0;
-            if (spi_is_writable(spi0))
-            {
-                len = spi_write_read_blocking(spi0, send_buf, rx_buffer, sizeof(send_buf));
-            }
+            const uint dma_channel = dma_claim_unused_channel(true);
+            dma_channel_start(dma_channel);
 
-            if (rx_buffer[0] != ERROR_CODE && len > 0)
+            dma_channel_configure(
+                dma_channel, &dma_cfg,
+                &spi_get_hw(spi0)->dr, 
+                send_buf, 
+                sizeof(send_buf), 
+                true 
+            );
+
+            dma_channel_wait_for_finish_blocking(dma_channel);
+
+            const uint dma_read = dma_claim_unused_channel(true);
+            dma_channel_start(dma_read);
+            dma_channel_configure(
+                dma_read, &dma_cfg,
+                rx_buffer,
+                &spi_get_hw(spi0)->dr,
+                sizeof(rx_buffer),
+                true
+            );
+
+            dma_channel_wait_for_finish_blocking(dma_read);
+
+            if (rx_buffer[0] != ERROR_CODE)
             {
                 watchdog_update();
                 vTaskDelay(10);
                 gpio_put(PICO_DEFAULT_LED_PIN, 0);
                 vTaskDelay(10);
             }
+
+            dma_channel_unclaim(dma_channel);
+            dma_channel_unclaim(dma_read);
         } else {
             if (gpio_get(PIN_CS))
             {
@@ -606,10 +646,10 @@ int main() {
         state = STATE_YELLOW_BLINKING;
     } 
 
-    watchdog_enable(600, false);
+    watchdog_enable(60, false);
 
-    xTaskCreate(transmit_state, "dataTransmitter", 1024, NULL, 1, &tsDataTransmitter);
-    xTaskCreate(handle_state, "stateHandler", 1024, NULL, 1, &tsStateHandler);
+    xTaskCreate(tTransmitState, "dataTransmitter", 1024, NULL, 1, &tsDataTransmitter);
+    xTaskCreate(tHandleState, "stateHandler", 1024, NULL, 1, &tsStateHandler);
     vTaskStartScheduler();
 
     while (true)
@@ -631,8 +671,8 @@ Auch hier müssen zunächst die Pins definiert werden:
 
 ```c
 #define PIN_SCK 2 //sck
-#define PIN_CS 5 //cs
-#define PIN_RX 4 //miso
+#define PIN_CS 1 //cs
+#define PIN_RX 0 //miso
 #define PIN_TX 3 //mosi
 ```
 
@@ -640,12 +680,18 @@ Anschließend werden sie mit fast der selben Funktion wie beim slave initialisie
 
 ```c
 static void init_spi(void) {
-    spi_init(spi0, 1000 * 1000);
+    spi_init(spi0, 1000*1000);
     spi_set_slave(spi0, false);
     gpio_set_function(PIN_RX, GPIO_FUNC_SPI);
     gpio_set_function(PIN_CS, GPIO_FUNC_SPI);
     gpio_set_function(PIN_SCK, GPIO_FUNC_SPI);
     gpio_set_function(PIN_TX, GPIO_FUNC_SPI);
+
+    dma_cfg = dma_channel_get_default_config(spi_get_index(spi0));
+    channel_config_set_transfer_data_size(&dma_cfg, DMA_SIZE_8);
+    channel_config_set_dreq(&dma_cfg, spi_get_index(spi0) ? DREQ_SPI1_TX : DREQ_SPI0_TX);
+    channel_config_set_read_increment(&dma_cfg, true);
+    channel_config_set_write_increment(&dma_cfg, true);
 } 
 ```
 
@@ -655,6 +701,7 @@ Auch beim Master PICO verwenden wir die Default LED, daher müssen wir folgendes
 
 ```c
 #define ERROR_CODE 0xF
+#define SUCCESS_CODE 0x7
 #define PICO_DEFAULT_LED_PIN 25
 ```
 
@@ -675,6 +722,7 @@ Zusätzlich zu zwei Tasks definieren wir eine Variable für den Timestamp:
 TaskHandle_t tsDataHandler = NULL;
 TaskHandle_t tsBlinker = NULL;
 TickType_t timestamp = 0;
+dma_channel_config dma_cfg;
 ```
 
 Dann einen `blinker` Task, welcher lediglich dafür sorgt, dass die LED blinkt:
@@ -696,23 +744,48 @@ Und einen etwas komplexeren DataHandler Task:
 void tDataHandler(void* p) {
     uint8_t buffer[1];
     while (true) {
-        gpio_put(PIN_CS, 0);
-        if (spi_is_readable(spi0))
-        {
-            timestamp = xTaskGetTickCount();
-            spi_read_blocking(spi0, 0, buffer, sizeof(buffer));
-        }
+        const uint dma_channel = dma_claim_unused_channel(true);
+        dma_channel_start(dma_channel);
+        dma_channel_configure(
+            dma_channel, 
+            &dma_cfg,
+            buffer, 
+            &spi_get_hw(spi0)->dr,  
+            sizeof(buffer), 
+            true  
+        );
 
+        dma_channel_wait_for_finish_blocking(dma_channel);
+        
+        const uint dma_write = dma_claim_unused_channel(true);
+        dma_channel_start(dma_write);
         if ((xTaskGetTickCount() - timestamp) > pdMS_TO_TICKS(60))
         {
-            if (spi_is_writable(spi0))
-            {
-                uint8_t send[1] = {ERROR_CODE};
-                spi_write_blocking(spi0, send, sizeof(send));
-            }
+            uint8_t send[1] = {ERROR_CODE};
+            dma_channel_configure(
+                dma_write, 
+                &dma_cfg,
+                &spi_get_hw(spi0)->dr,
+                send,
+                sizeof(send), 
+                true 
+            );
+        } else {
+            uint8_t send[1] = {SUCCESS_CODE};
+            dma_channel_configure(
+                dma_write, 
+                &dma_cfg,
+                &spi_get_hw(spi0)->dr,
+                send,
+                sizeof(send), 
+                true 
+            );
         }
-        gpio_put(PIN_CS, 1);
+        dma_channel_wait_for_finish_blocking(dma_write);
+        dma_channel_unclaim(dma_write);
+        dma_channel_unclaim(dma_channel);
         vTaskDelay(30);
+        timestamp = xTaskGetTickCount();
     }
 }
 ```
@@ -726,13 +799,13 @@ int main() {
     init_pins();
     init_spi();
 
-    xTaskCreate(tDataHandler, "dataHandler", 1024, NULL, 1, &tsDataHandler);
+    xTaskCreate(tDataHandler, "dataHandler", 1024, NULL, 2, &tsDataHandler);
     xTaskCreate(tBlinker, "blinkHandler", 1024, NULL, 1, &tsBlinker);
     vTaskStartScheduler();
 
     while (true)
     {
-        gpio_put(PICO_DEFAULT_LED_PIN, 1);
+        //never reached
     }
 }
 ```
