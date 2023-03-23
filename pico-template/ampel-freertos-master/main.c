@@ -9,8 +9,8 @@
 #define PICO_DEFAULT_LED_PIN 25
 
 #define PIN_SCK 2 //sck
-#define PIN_CS 5 //cs
-#define PIN_RX 4 //miso
+#define PIN_CS 1 //cs
+#define PIN_RX 0 //miso
 #define PIN_TX 3 //mosi
 
 TaskHandle_t tsDataHandler = NULL;
@@ -55,6 +55,7 @@ static void init_spi(void) {
     channel_config_set_transfer_data_size(&dma_cfg, DMA_SIZE_8);
     channel_config_set_dreq(&dma_cfg, spi_get_index(spi0) ? DREQ_SPI1_TX : DREQ_SPI0_TX);
     channel_config_set_read_increment(&dma_cfg, true);
+    channel_config_set_write_increment(&dma_cfg, true);
 } 
 
 void tBlinker(void* p) {
@@ -70,27 +71,33 @@ void tDataHandler(void* p) {
     uint8_t buffer[1];
     while (true) {
         const uint dma_channel = dma_claim_unused_channel(true);
+        dma_channel_start(dma_channel);
         dma_channel_configure(
-            dma_channel, &dma_cfg,
+            dma_channel, 
+            &dma_cfg,
             buffer, 
             &spi_get_hw(spi0)->dr,  
             sizeof(buffer), 
             true  
         );
 
-        while (dma_channel_is_busy(dma_channel));
         dma_channel_wait_for_finish_blocking(dma_channel);
         
         if ((xTaskGetTickCount() - timestamp) > pdMS_TO_TICKS(60))
         {
             uint8_t send[1] = {ERROR_CODE};
+            const uint dma_write = dma_claim_unused_channel(true);
+            dma_channel_start(dma_write);
             dma_channel_configure(
-            dma_channel, &dma_cfg,
-            &spi_get_hw(spi0)->dr,
-            send,
-            sizeof(send), 
-            true 
-        );
+                dma_write, 
+                &dma_cfg,
+                &spi_get_hw(spi0)->dr,
+                send,
+                sizeof(send), 
+                true 
+            );
+            dma_channel_wait_for_finish_blocking(dma_write);
+            dma_channel_unclaim(dma_write);
         }
         dma_channel_unclaim(dma_channel);
         vTaskDelay(30);

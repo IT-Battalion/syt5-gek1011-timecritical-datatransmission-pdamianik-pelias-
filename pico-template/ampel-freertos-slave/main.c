@@ -106,7 +106,7 @@ int main() {
         state = STATE_YELLOW_BLINKING;
     } 
 
-    watchdog_enable(600, false);
+    watchdog_enable(60, false);
 
     xTaskCreate(tTransmitState, "dataTransmitter", 1024, NULL, 1, &tsDataTransmitter);
     xTaskCreate(tHandleState, "stateHandler", 1024, NULL, 1, &tsStateHandler);
@@ -140,8 +140,9 @@ static void init_spi(void) {
 
     dma_cfg = dma_channel_get_default_config(spi_get_index(spi0));
     channel_config_set_transfer_data_size(&dma_cfg, DMA_SIZE_8);
-    channel_config_set_dreq(&dma_cfg, spi_get_index(spi0) ? DREQ_SPI1_RX : DREQ_SPI0_RX);
+    channel_config_set_dreq(&dma_cfg, DREQ_SPI0_RX);
     channel_config_set_write_increment(&dma_cfg, true);
+    channel_config_set_read_increment(&dma_cfg, true);
 } 
 
 static void state_error(void) {
@@ -161,6 +162,7 @@ void tTransmitState(void* p) {
 
             uint8_t send_buf[1] = {getStatusForState(state)};
             const uint dma_channel = dma_claim_unused_channel(true);
+            dma_channel_start(dma_channel);
 
             dma_channel_configure(
                 dma_channel, &dma_cfg,
@@ -170,7 +172,10 @@ void tTransmitState(void* p) {
                 true 
             );
 
+            dma_channel_wait_for_finish_blocking(dma_channel);
+
             const uint dma_read = dma_claim_unused_channel(true);
+            dma_channel_start(dma_read);
             dma_channel_configure(
                 dma_read, &dma_cfg,
                 rx_buffer,
@@ -179,7 +184,6 @@ void tTransmitState(void* p) {
                 true
             );
 
-            while (dma_channel_is_busy(dma_read));
             dma_channel_wait_for_finish_blocking(dma_read);
 
             if (rx_buffer[0] != ERROR_CODE)
