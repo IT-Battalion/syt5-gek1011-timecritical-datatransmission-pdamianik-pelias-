@@ -205,15 +205,15 @@
 
 #### Borkos blöde Fragen
 
-default Taktfrequenz vom pico
-12MHz
 
-Interrupts vs DMA
--> Interrupts hat n Interrupthandler der alles blockiert
+Die Default Taktfrequenz vom Pico beträgt **12MHz**
+
+**Interrupts vs DMA**
+-> Interrupts hat einen Interrupthandler der alles blockiert
 -> DMA macht das im Hintergrund der in den Buffer schreibt und Prozessor entlastet
 
-Interrupts
-Wenn bei SPI die Interrupt Flag gesetzt wird wird diese behandelt. Wenn ein neuer Interrupt mit höherer Priotität rein kommt, dann wird der aktuelle Interrupt unterbrochen und der mit der höchsten Priorität ausgeführt
+**Interrupts**
+Wenn bei SPI die Interrupt Flag gesetzt wird wird diese behandelt. Wenn ein neuer Interrupt mit höherer Priorität rein kommt, dann wird der aktuelle Interrupt unterbrochen und der mit der höchsten Priorität ausgeführt.
 
 Nach dem ausführen wird die Flag gecleared. Danach springt man zurück zur unterbrochenen Funktion die ausgeführt wird, auch wenn die Flag von diesem Interrupt schon gecleared wurde.
 
